@@ -1,0 +1,63 @@
+[package]
+name = "jdx"
+version = "0.1.0"
+edition = "2021"
+description = "JSON Data eXplorer — an interactive, AI-augmented terminal JSON viewer"
+license = "MIT"
+repository = "https://github.com/yourname/jdx"
+keywords = ["json", "tui", "cli", "viewer", "explorer"]
+categories = ["command-line-utilities", "visualization"]
+
+[lib]
+name = "jdx"
+path = "src/lib.rs"
+
+[[bin]]
+name = "jdx"
+path = "src/main.rs"
+
+[dependencies]
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# JSON
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Fuzzy matching
+fuzzy-matcher = "0.3"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Async
+async-trait = "0.1"
+
+# Clipboard
+arboard = "3"
+
+# Config / paths
+directories = "6"
+toml = "0.8"
+
+# Formats (Phase 3, but declare early so structure compiles)
+serde_yaml = "0.9"
+csv = "1"
+
+# AI / HTTP (Phase 4)
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+reqwest = { version = "0.12", features = ["json"] }
+
+# Logging (optional, for debugging)
+log = "0.4"
+
+[dev-dependencies]
+pretty_assertions = "1"
+insta = { version = "1", features = ["yaml"] }
+tempfile = "3"
+wiremock = "0.6"

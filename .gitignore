@@ -1,0 +1,23 @@
+# Rust build artifacts
+/target
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment / secrets
+.env
+.env.local
+
+# Test artifacts
+*.snap.new
+
+# cargo-dist output
+dist/

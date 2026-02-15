@@ -1,0 +1,48 @@
+{
+  "store": {
+    "name": "My Store",
+    "books": [
+      {
+        "title": "The Great Gatsby",
+        "author": "F. Scott Fitzgerald",
+        "price": 10.99,
+        "tags": ["fiction", "classic"]
+      },
+      {
+        "title": "1984",
+        "author": "George Orwell",
+        "price": 8.99,
+        "tags": ["fiction", "dystopian"],
+        "metadata": {
+          "isbn": "978-0451524935",
+          "edition": 3,
+          "publisher": {
+            "name": "Signet Classics",
+            "country": "US"
+          }
+        }
+      },
+      {
+        "title": "Clean Code",
+        "author": "Robert C. Martin",
+        "price": 32.99,
+        "tags": ["programming", "best-practices"]
+      }
+    ],
+    "location": {
+      "city": "Portland",
+      "state": "OR",
+      "coordinates": {
+        "lat": 45.5152,
+        "lng": -122.6784
+      }
+    }
+  },
+  "users": [
+    {"id": 1, "name": "Alice", "role": "admin"},
+    {"id": 2, "name": "Bob", "role": "user"},
+    {"id": 3, "name": "Charlie", "role": "user"}
+  ],
+  "version": "2.0",
+  "active": true
+}

@@ -1,0 +1,13 @@
+{
+  "simple": "value",
+  "key.with.dots": "dotted",
+  "key with spaces": "spaced",
+  "key\"with\"quotes": "quoted",
+  "日本語": "Japanese",
+  "émoji🎉": "fun",
+  "nested.object": {
+    "inner.key": "deep"
+  },
+  "": "empty key",
+  "123numeric": "starts with number"
+}
