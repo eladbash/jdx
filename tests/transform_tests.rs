@@ -239,7 +239,8 @@ fn test_filter_transform_chained_with_pick_and_sort() {
     let result = traverse(&data, &segments);
     let books = result.value.unwrap();
 
-    let result = apply_transform(&books, ":filter price < 15 :pick title,price :sort price").unwrap();
+    let result =
+        apply_transform(&books, ":filter price < 15 :pick title,price :sort price").unwrap();
     let arr = result.as_array().unwrap();
     assert_eq!(arr.len(), 2);
     // Sorted by price ascending: 1984 (8.99), then Great Gatsby (10.99)

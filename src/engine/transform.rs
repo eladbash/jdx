@@ -32,13 +32,7 @@ fn split_chain(input: &str) -> Vec<String> {
     for i in 1..bytes.len() {
         if bytes[i] == b':' && bytes[i - 1] == b' ' {
             // Check if this is the very first command (starts at position 0 with `:`)
-            if current_start == 0 && bytes[0] == b':' && i > current_start {
-                let chunk = input[current_start..i].trim();
-                if !chunk.is_empty() {
-                    commands.push(chunk.to_string());
-                }
-                current_start = i;
-            } else if current_start < i {
+            if i > current_start {
                 let chunk = input[current_start..i].trim();
                 if !chunk.is_empty() {
                     commands.push(chunk.to_string());
@@ -288,8 +282,8 @@ fn transform_filter(value: &Value, args: &str) -> Result<Value> {
         bail!(":filter requires a predicate (e.g., :filter price < 10)");
     }
 
-    let pred = parse_predicate(args)
-        .map_err(|e| anyhow::anyhow!(":filter invalid predicate: {e}"))?;
+    let pred =
+        parse_predicate(args).map_err(|e| anyhow::anyhow!(":filter invalid predicate: {e}"))?;
 
     match value {
         Value::Array(arr) => {

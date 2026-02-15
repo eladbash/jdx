@@ -79,7 +79,10 @@ pub fn truncate_data_for_prompt(data: &serde_json::Value, max_chars: usize) -> S
 
     // Still too large: truncate with indicator
     let truncated = &compact[..max_chars.saturating_sub(30)];
-    format!("{truncated}\n... (data truncated, {total} chars total)", total = compact.len())
+    format!(
+        "{truncated}\n... (data truncated, {total} chars total)",
+        total = compact.len()
+    )
 }
 
 #[cfg(test)]

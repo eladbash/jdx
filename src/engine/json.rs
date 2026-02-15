@@ -452,13 +452,11 @@ mod tests {
             {"name": "Bob", "active": false},
             {"name": "Carol", "active": true}
         ]);
-        let segments = vec![
-            PathSegment::Filter(Predicate {
-                field: "active".into(),
-                op: CompareOp::Eq,
-                value: FilterValue::Bool(true),
-            }),
-        ];
+        let segments = vec![PathSegment::Filter(Predicate {
+            field: "active".into(),
+            op: CompareOp::Eq,
+            value: FilterValue::Bool(true),
+        })];
         let result = traverse(&data, &segments);
         let arr = result.value.unwrap();
         let arr = arr.as_array().unwrap();
@@ -497,13 +495,11 @@ mod tests {
             {"val": 1},
             {"val": 2}
         ]);
-        let segments = vec![
-            PathSegment::Filter(Predicate {
-                field: "val".into(),
-                op: CompareOp::Gt,
-                value: FilterValue::Number(100.0),
-            }),
-        ];
+        let segments = vec![PathSegment::Filter(Predicate {
+            field: "val".into(),
+            op: CompareOp::Gt,
+            value: FilterValue::Number(100.0),
+        })];
         let result = traverse(&data, &segments);
         assert_eq!(result.value, Some(json!([])));
     }
@@ -511,13 +507,11 @@ mod tests {
     #[test]
     fn test_traverse_filter_on_non_array() {
         let data = json!({"a": 1});
-        let segments = vec![
-            PathSegment::Filter(Predicate {
-                field: "a".into(),
-                op: CompareOp::Eq,
-                value: FilterValue::Number(1.0),
-            }),
-        ];
+        let segments = vec![PathSegment::Filter(Predicate {
+            field: "a".into(),
+            op: CompareOp::Eq,
+            value: FilterValue::Number(1.0),
+        })];
         let result = traverse(&data, &segments);
         assert_eq!(result.value, None);
     }

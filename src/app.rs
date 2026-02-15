@@ -608,8 +608,7 @@ impl App {
         let schema_summary = format_schema(&schema, 0);
 
         // Build data context (actual values, truncated if large)
-        let data_context =
-            crate::ai::prompts::truncate_data_for_prompt(&self.data, 4000);
+        let data_context = crate::ai::prompts::truncate_data_for_prompt(&self.data, 4000);
 
         // Create provider from config
         let provider = &self.config.ai.provider;
@@ -723,15 +722,15 @@ impl App {
 
     fn render_single(&self, frame: &mut Frame, area: Rect) {
         // New layout: [results (fill)] [ai_panel (dynamic)] [query_input (1)] [status_bar (1)]
-        let ai_height = (area.height / 4).max(6).min(12);
+        let ai_height = (area.height / 4).clamp(6, 12);
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Min(5),              // results panel
-                Constraint::Length(ai_height),   // AI panel (always visible)
-                Constraint::Length(1),           // query input
-                Constraint::Length(1),           // status bar
+                Constraint::Min(5),            // results panel
+                Constraint::Length(ai_height), // AI panel (always visible)
+                Constraint::Length(1),         // query input
+                Constraint::Length(1),         // status bar
             ])
             .split(area);
 
@@ -758,15 +757,15 @@ impl App {
 
     fn render_split(&self, frame: &mut Frame, area: Rect) {
         // Layout: [tree|json (fill)] [ai_panel (dynamic)] [query_input (1)] [status_bar (1)]
-        let ai_height = (area.height / 4).max(6).min(12);
+        let ai_height = (area.height / 4).clamp(6, 12);
 
         let v_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Min(5),              // results area (tree + json)
-                Constraint::Length(ai_height),   // AI panel (always visible)
-                Constraint::Length(1),           // query input
-                Constraint::Length(1),           // status bar
+                Constraint::Min(5),            // results area (tree + json)
+                Constraint::Length(ai_height), // AI panel (always visible)
+                Constraint::Length(1),         // query input
+                Constraint::Length(1),         // status bar
             ])
             .split(area);
 

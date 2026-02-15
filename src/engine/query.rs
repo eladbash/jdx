@@ -3,12 +3,12 @@ use thiserror::Error;
 /// Comparison operator for filter predicates.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompareOp {
-    Eq,  // ==
-    Ne,  // !=
-    Lt,  // <
-    Gt,  // >
-    Le,  // <=
-    Ge,  // >=
+    Eq, // ==
+    Ne, // !=
+    Lt, // <
+    Gt, // >
+    Le, // <=
+    Ge, // >=
 }
 
 /// A value literal in a filter predicate.
@@ -70,7 +70,14 @@ pub fn parse_predicate(expr: &str) -> Result<Predicate, String> {
     let expr = expr.trim();
 
     // Try two-char operators first, then single-char
-    let ops = [("==", CompareOp::Eq), ("!=", CompareOp::Ne), ("<=", CompareOp::Le), (">=", CompareOp::Ge), ("<", CompareOp::Lt), (">", CompareOp::Gt)];
+    let ops = [
+        ("==", CompareOp::Eq),
+        ("!=", CompareOp::Ne),
+        ("<=", CompareOp::Le),
+        (">=", CompareOp::Ge),
+        ("<", CompareOp::Lt),
+        (">", CompareOp::Gt),
+    ];
 
     for (op_str, op) in &ops {
         if let Some(idx) = expr.find(op_str) {
@@ -82,7 +89,11 @@ pub fn parse_predicate(expr: &str) -> Result<Predicate, String> {
             }
 
             let value = parse_filter_value(value_str)?;
-            return Ok(Predicate { field, op: op.clone(), value });
+            return Ok(Predicate {
+                field,
+                op: op.clone(),
+                value,
+            });
         }
     }
 

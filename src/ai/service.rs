@@ -89,7 +89,8 @@ pub fn parse_ai_response(text: &str) -> AiResponse {
 
         // Check for "Query: ..." line
         if let Some(q) = trimmed.strip_prefix("Query:") {
-            let q = q.trim()
+            let q = q
+                .trim()
                 .trim_start_matches('`')
                 .trim_end_matches('`')
                 .trim()
@@ -111,8 +112,9 @@ pub fn parse_ai_response(text: &str) -> AiResponse {
     let answer = answer_lines.join("\n").trim().to_string();
 
     // If the entire response is just a jdx query (starts with .), treat it as a query
-    if answer.starts_with('.') && !answer.contains(' ') || 
-       (answer.starts_with('.') && answer.contains(" :")) {
+    if answer.starts_with('.') && !answer.contains(' ')
+        || (answer.starts_with('.') && answer.contains(" :"))
+    {
         let query = answer.split('\n').next().unwrap_or("").trim().to_string();
         return AiResponse {
             answer: format!("Suggested query: {query}"),

@@ -95,7 +95,6 @@ struct Cli {
     /// Non-interactive mode: evaluate query and print result
     #[arg(long = "non-interactive")]
     non_interactive: bool,
-
 }
 
 fn main() -> Result<()> {
