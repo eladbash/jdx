@@ -2,11 +2,16 @@
 name = "jdx"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.74"
 description = "JSON Data eXplorer — an interactive, AI-augmented terminal JSON viewer"
+authors = ["Elad Bash"]
 license = "MIT"
-repository = "https://github.com/yourname/jdx"
+readme = "README.md"
+homepage = "https://github.com/eladbash/jdx"
+repository = "https://github.com/eladbash/jdx"
 keywords = ["json", "tui", "cli", "viewer", "explorer"]
 categories = ["command-line-utilities", "visualization"]
+exclude = ["demo.gif", "demo.tape", "fixtures/", ".github/"]
 
 [lib]
 name = "jdx"
@@ -19,7 +24,7 @@ path = "src/main.rs"
 [dependencies]
 # TUI
 ratatui = "0.29"
-crossterm = "0.28"
+crossterm = { version = "0.28", features = ["use-dev-tty"] }
 
 # CLI
 clap = { version = "4", features = ["derive"] }
@@ -52,6 +57,10 @@ csv = "1"
 # AI / HTTP (Phase 4)
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 reqwest = { version = "0.12", features = ["json"] }
+
+# TTY handling for piped stdin
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 # Logging (optional, for debugging)
 log = "0.4"

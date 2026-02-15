@@ -4,7 +4,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use super::prompts;
-use super::service::{AiProvider, AiQuery, AiResponse};
+use super::service::{parse_ai_response, AiProvider, AiQuery, AiResponse};
 
 /// Ollama local LLM provider.
 pub struct OllamaProvider {
@@ -40,7 +40,7 @@ struct GenerateResponse {
 impl AiProvider for OllamaProvider {
     async fn query(&self, request: &AiQuery) -> Result<AiResponse> {
         let system_prompt = prompts::build_system_prompt(&request.schema_summary);
-        let user_prompt = prompts::build_user_prompt(&request.question);
+        let user_prompt = prompts::build_user_prompt(&request.question, &request.data_context);
 
         let body = GenerateRequest {
             model: self.model.clone(),
@@ -60,24 +60,7 @@ impl AiProvider for OllamaProvider {
             .await?;
 
         let text = response.response.trim().to_string();
-
-        // Parse response: first line is the path, rest is explanation
-        let mut lines = text.lines();
-        let path_expression = lines.next().unwrap_or("").to_string();
-        let explanation: String = lines
-            .filter(|l| l.starts_with("# "))
-            .map(|l| l.trim_start_matches("# "))
-            .collect::<Vec<_>>()
-            .join(" ");
-
-        Ok(AiResponse {
-            path_expression,
-            explanation: if explanation.is_empty() {
-                None
-            } else {
-                Some(explanation)
-            },
-        })
+        Ok(parse_ai_response(&text))
     }
 
     fn name(&self) -> &str {

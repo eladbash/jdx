@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::mpsc;
 
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
@@ -7,6 +8,9 @@ use ratatui::{
 };
 use serde_json::Value;
 
+use crate::ai::ollama::OllamaProvider;
+use crate::ai::openai::OpenAiProvider;
+use crate::ai::service::{AiQuery, AiResponse, AiService};
 use crate::config::AppConfig;
 use crate::engine::json::{get_available_keys, pretty_print, traverse};
 use crate::engine::query::{self, get_last_keyword};
@@ -66,18 +70,24 @@ pub struct App {
     pub schema_text: Option<String>,
     /// AI input
     pub ai_input: String,
-    /// AI response path
+    /// AI text answer
     pub ai_response: Option<String>,
-    /// AI explanation
-    pub ai_explanation: Option<String>,
+    /// AI suggested query (optional)
+    pub ai_suggested_query: Option<String>,
     /// AI loading state
     pub ai_loading: bool,
     /// AI error
     pub ai_error: Option<String>,
+    /// AI input cursor position
+    pub ai_cursor: usize,
+    /// AI panel scroll offset
+    pub ai_scroll: u16,
     /// Split view enabled
     pub split_view: bool,
     /// Monochrome mode
     pub monochrome: bool,
+    /// Receiver for async AI results
+    ai_result_rx: Option<mpsc::Receiver<Result<AiResponse, String>>>,
 }
 
 impl App {
@@ -107,11 +117,43 @@ impl App {
             schema_text: None,
             ai_input: String::new(),
             ai_response: None,
-            ai_explanation: None,
+            ai_suggested_query: None,
             ai_loading: false,
             ai_error: None,
+            ai_cursor: 0,
+            ai_scroll: 0,
             split_view: false,
             monochrome,
+            ai_result_rx: None,
+        }
+    }
+
+    /// Poll for AI results from background thread (non-blocking).
+    pub fn poll_ai_result(&mut self) {
+        if let Some(rx) = &self.ai_result_rx {
+            match rx.try_recv() {
+                Ok(Ok(response)) => {
+                    self.ai_loading = false;
+                    self.ai_response = Some(response.answer);
+                    self.ai_suggested_query = response.suggested_query;
+                    // Stay in AI mode to show the answer — user can press Enter
+                    // to apply suggested query or Esc to go back
+                    self.ai_result_rx = None;
+                }
+                Ok(Err(err)) => {
+                    self.ai_loading = false;
+                    self.ai_error = Some(err);
+                    self.ai_result_rx = None;
+                }
+                Err(mpsc::TryRecvError::Empty) => {
+                    // Still waiting — keep polling
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.ai_loading = false;
+                    self.ai_error = Some("AI request was interrupted".into());
+                    self.ai_result_rx = None;
+                }
+            }
         }
     }
 
@@ -459,24 +501,189 @@ impl App {
                 self.mode = AppMode::Query;
             }
             KeyCode::Backspace => {
-                self.ai_input.pop();
+                if self.ai_response.is_some() {
+                    self.ai_response = None;
+                    self.ai_suggested_query = None;
+                    self.ai_error = None;
+                }
+                if self.ai_cursor > 0 {
+                    self.ai_cursor -= 1;
+                    self.ai_input.remove(self.ai_cursor);
+                }
+            }
+            KeyCode::Delete => {
+                if self.ai_cursor < self.ai_input.len() {
+                    self.ai_input.remove(self.ai_cursor);
+                }
             }
             KeyCode::Enter => {
-                // AI query would be dispatched here (async)
-                // For now, show a message
-                self.ai_error =
-                    Some("AI not configured. Set up in ~/.config/jdx/config.toml".into());
+                // If there's a suggested query from a previous response, apply it
+                if let Some(ref query) = self.ai_suggested_query.clone() {
+                    self.query = query.clone();
+                    self.cursor = self.query.len();
+                    self.scroll = 0;
+                    self.mode = AppMode::Query;
+                    return;
+                }
+                // Otherwise, dispatch a new AI query
+                self.dispatch_ai_query();
+            }
+            KeyCode::Left if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.ai_cursor = self.ai_cursor.saturating_sub(1);
+            }
+            KeyCode::Right if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.ai_cursor = (self.ai_cursor + 1).min(self.ai_input.len());
+            }
+            KeyCode::Home => {
+                self.ai_cursor = 0;
+            }
+            KeyCode::End => {
+                self.ai_cursor = self.ai_input.len();
             }
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.ai_input.push(c);
+                // If user starts typing after a response, clear old response
+                if self.ai_response.is_some() {
+                    self.ai_response = None;
+                    self.ai_suggested_query = None;
+                    self.ai_error = None;
+                }
+                self.ai_input.insert(self.ai_cursor, c);
+                self.ai_cursor += 1;
             }
             _ => {
                 let action = map_key_event(key);
-                if action == Action::Quit {
-                    self.should_quit = true;
+                match action {
+                    Action::Quit => self.should_quit = true,
+                    Action::CursorHome => self.ai_cursor = 0,
+                    Action::CursorEnd => self.ai_cursor = self.ai_input.len(),
+                    Action::CursorLeft => {
+                        self.ai_cursor = self.ai_cursor.saturating_sub(1);
+                    }
+                    Action::CursorRight => {
+                        self.ai_cursor = (self.ai_cursor + 1).min(self.ai_input.len());
+                    }
+                    Action::ClearQuery => {
+                        self.ai_input.clear();
+                        self.ai_cursor = 0;
+                        self.ai_response = None;
+                        self.ai_suggested_query = None;
+                        self.ai_error = None;
+                    }
+                    Action::DeleteWordBackward => {
+                        if self.ai_cursor > 0 {
+                            let mut target = self.ai_cursor - 1;
+                            while target > 0 && self.ai_input.as_bytes()[target] != b' ' {
+                                target -= 1;
+                            }
+                            self.ai_input.drain(target..self.ai_cursor);
+                            self.ai_cursor = target;
+                        }
+                    }
+                    Action::ScrollDown => {
+                        self.ai_scroll = self.ai_scroll.saturating_add(1);
+                    }
+                    Action::ScrollUp => {
+                        self.ai_scroll = self.ai_scroll.saturating_sub(1);
+                    }
+                    Action::PageDown => {
+                        self.ai_scroll = self.ai_scroll.saturating_add(10);
+                    }
+                    Action::PageUp => {
+                        self.ai_scroll = self.ai_scroll.saturating_sub(10);
+                    }
+                    _ => {}
                 }
             }
         }
+    }
+
+    fn dispatch_ai_query(&mut self) {
+        let question = self.ai_input.trim().to_string();
+        if question.is_empty() {
+            return;
+        }
+
+        // Build schema summary for context
+        let schema = infer_schema(&self.data, self.config.display.schema_max_samples);
+        let schema_summary = format_schema(&schema, 0);
+
+        // Build data context (actual values, truncated if large)
+        let data_context =
+            crate::ai::prompts::truncate_data_for_prompt(&self.data, 4000);
+
+        // Create provider from config
+        let provider = &self.config.ai.provider;
+        let model = self.config.ai.model.clone();
+        let endpoint = if self.config.ai.endpoint.is_empty() {
+            None
+        } else {
+            Some(self.config.ai.endpoint.clone())
+        };
+        let api_key = self.config.ai.api_key.clone();
+
+        let service: AiService = match provider.as_str() {
+            "ollama" => {
+                let p = OllamaProvider::new(
+                    if model.is_empty() {
+                        "llama3.2".into()
+                    } else {
+                        model
+                    },
+                    endpoint,
+                );
+                AiService::with_provider(Box::new(p))
+            }
+            "openai" | "anthropic" => {
+                if api_key.is_empty() {
+                    self.ai_error = Some(format!(
+                        "API key required for {provider}. Set ai.api_key in config.toml"
+                    ));
+                    return;
+                }
+                let p = OpenAiProvider::new(
+                    api_key,
+                    if model.is_empty() {
+                        "gpt-4o-mini".into()
+                    } else {
+                        model
+                    },
+                    endpoint,
+                );
+                AiService::with_provider(Box::new(p))
+            }
+            "none" | "" => {
+                self.ai_error =
+                    Some("AI disabled. Set ai.provider in ~/.config/jdx/config.toml".into());
+                return;
+            }
+            other => {
+                self.ai_error = Some(format!("Unknown AI provider: {other}"));
+                return;
+            }
+        };
+
+        // Set loading state
+        self.ai_loading = true;
+        self.ai_error = None;
+        self.ai_response = None;
+        self.ai_suggested_query = None;
+        self.ai_scroll = 0;
+
+        // Spawn background thread for the async AI call
+        let (tx, rx) = mpsc::channel();
+        self.ai_result_rx = Some(rx);
+
+        let query = AiQuery {
+            question,
+            schema_summary,
+            data_context,
+        };
+
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let result = rt.block_on(service.query(&query));
+            let _ = tx.send(result.map_err(|e| e.to_string()));
+        });
     }
 
     fn handle_schema_event(&mut self, key: event::KeyEvent) {
@@ -515,49 +722,59 @@ impl App {
     }
 
     fn render_single(&self, frame: &mut Frame, area: Rect) {
-        // Layout: [query_input (1)] [json_view (fill)] [status_bar (1)]
+        // New layout: [results (fill)] [ai_panel (dynamic)] [query_input (1)] [status_bar (1)]
+        let ai_height = (area.height / 4).max(6).min(12);
+
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1), // query input
-                Constraint::Min(3),    // json view
-                Constraint::Length(1), // status bar
+                Constraint::Min(5),              // results panel
+                Constraint::Length(ai_height),   // AI panel (always visible)
+                Constraint::Length(1),           // query input
+                Constraint::Length(1),           // status bar
             ])
             .split(area);
 
-        self.render_query_input(frame, chunks[0]);
-
+        // Results panel — depends on mode
         match self.mode {
-            AppMode::Schema => self.render_schema_view(frame, chunks[1]),
-            AppMode::Ai => self.render_ai_panel(frame, chunks[1]),
-            _ => self.render_json_view(frame, chunks[1]),
+            AppMode::Schema => self.render_schema_view(frame, chunks[0]),
+            _ => self.render_json_view(frame, chunks[0]),
         }
 
-        self.render_status_bar(frame, chunks[2]);
+        // AI panel — always visible
+        self.render_ai_panel(frame, chunks[1]);
 
-        // Candidate popup (floating, on top)
+        // Query input
+        self.render_query_input(frame, chunks[2]);
+
+        // Status bar
+        self.render_status_bar(frame, chunks[3]);
+
+        // Candidate popup (floating, on top of results area)
         if self.show_candidates && self.mode == AppMode::Query {
-            self.render_candidates(frame, chunks[1]);
+            self.render_candidates(frame, chunks[0]);
         }
     }
 
     fn render_split(&self, frame: &mut Frame, area: Rect) {
-        // Layout: [query_input (1)] [tree (left) | json (right)] [status_bar (1)]
+        // Layout: [tree|json (fill)] [ai_panel (dynamic)] [query_input (1)] [status_bar (1)]
+        let ai_height = (area.height / 4).max(6).min(12);
+
         let v_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1),
-                Constraint::Min(3),
-                Constraint::Length(1),
+                Constraint::Min(5),              // results area (tree + json)
+                Constraint::Length(ai_height),   // AI panel (always visible)
+                Constraint::Length(1),           // query input
+                Constraint::Length(1),           // status bar
             ])
             .split(area);
 
-        self.render_query_input(frame, v_chunks[0]);
-
+        // Split the results area horizontally: tree | json
         let h_chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
-            .split(v_chunks[1]);
+            .split(v_chunks[0]);
 
         // Tree view on the left
         let nodes = build_tree(&self.data, &self.tree_expanded);
@@ -571,10 +788,17 @@ impl App {
         // JSON view on the right
         self.render_json_view(frame, h_chunks[1]);
 
-        self.render_status_bar(frame, v_chunks[2]);
+        // AI panel — always visible
+        self.render_ai_panel(frame, v_chunks[1]);
+
+        // Query input
+        self.render_query_input(frame, v_chunks[2]);
+
+        // Status bar
+        self.render_status_bar(frame, v_chunks[3]);
 
         if self.show_candidates && self.mode == AppMode::Query {
-            self.render_candidates(frame, v_chunks[1]);
+            self.render_candidates(frame, v_chunks[0]);
         }
     }
 
@@ -589,11 +813,13 @@ impl App {
 
         let is_error = query::parse(&self.query).is_err() && self.query.len() > 1;
 
+        let query_focused = self.mode == AppMode::Query;
         let widget = QueryInputWidget {
             query: &self.query,
             cursor: self.cursor,
             completion: completion_ref,
             error: is_error,
+            focused: query_focused,
         };
 
         let cursor_x = widget.cursor_x(area);
@@ -640,14 +866,25 @@ impl App {
     }
 
     fn render_ai_panel(&self, frame: &mut Frame, area: Rect) {
+        let focused = self.mode == AppMode::Ai;
         let widget = AiPanelWidget {
             input: &self.ai_input,
+            cursor: self.ai_cursor,
             response: self.ai_response.as_deref(),
-            explanation: self.ai_explanation.as_deref(),
+            suggested_query: self.ai_suggested_query.as_deref(),
             loading: self.ai_loading,
             error: self.ai_error.as_deref(),
+            focused,
+            scroll: self.ai_scroll,
         };
-        frame.render_widget(widget, area);
+
+        if focused {
+            let (cx, cy) = widget.cursor_position(area);
+            frame.render_widget(widget, area);
+            frame.set_cursor_position((cx, cy));
+        } else {
+            frame.render_widget(widget, area);
+        }
     }
 
     fn render_status_bar(&self, frame: &mut Frame, area: Rect) {

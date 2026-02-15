@@ -17,6 +17,8 @@ pub struct QueryInputWidget<'a> {
     pub completion: Option<&'a str>,
     /// Whether there's a validation error
     pub error: bool,
+    /// Whether this widget currently has input focus
+    pub focused: bool,
 }
 
 impl<'a> Widget for QueryInputWidget<'a> {
@@ -26,14 +28,20 @@ impl<'a> Widget for QueryInputWidget<'a> {
         }
 
         let prompt = "[Filter]> ";
-        let prompt_style = Style::default()
-            .fg(Color::Cyan)
-            .add_modifier(Modifier::BOLD);
+        let prompt_style = if self.focused {
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
 
         let query_style = if self.error {
             Style::default().fg(Color::Red)
-        } else {
+        } else if self.focused {
             Style::default().fg(Color::White)
+        } else {
+            Style::default().fg(Color::DarkGray)
         };
 
         let completion_style = Style::default().fg(Color::DarkGray);

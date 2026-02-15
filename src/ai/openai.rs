@@ -4,7 +4,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use super::prompts;
-use super::service::{AiProvider, AiQuery, AiResponse};
+use super::service::{parse_ai_response, AiProvider, AiQuery, AiResponse};
 
 /// OpenAI-compatible API provider (works with OpenAI, Azure, local APIs).
 pub struct OpenAiProvider {
@@ -53,7 +53,7 @@ struct Choice {
 impl AiProvider for OpenAiProvider {
     async fn query(&self, request: &AiQuery) -> Result<AiResponse> {
         let system_prompt = prompts::build_system_prompt(&request.schema_summary);
-        let user_prompt = prompts::build_user_prompt(&request.question);
+        let user_prompt = prompts::build_user_prompt(&request.question, &request.data_context);
 
         let body = ChatRequest {
             model: self.model.clone(),
@@ -68,7 +68,7 @@ impl AiProvider for OpenAiProvider {
                 },
             ],
             temperature: 0.1,
-            max_tokens: 200,
+            max_tokens: 500,
         };
 
         let response = self
@@ -88,23 +88,7 @@ impl AiProvider for OpenAiProvider {
             .map(|c| c.message.content.trim().to_string())
             .unwrap_or_default();
 
-        // Parse response: first line is the path, rest is explanation
-        let mut lines = text.lines();
-        let path_expression = lines.next().unwrap_or("").to_string();
-        let explanation: String = lines
-            .filter(|l| l.starts_with("# "))
-            .map(|l| l.trim_start_matches("# "))
-            .collect::<Vec<_>>()
-            .join(" ");
-
-        Ok(AiResponse {
-            path_expression,
-            explanation: if explanation.is_empty() {
-                None
-            } else {
-                Some(explanation)
-            },
-        })
+        Ok(parse_ai_response(&text))
     }
 
     fn name(&self) -> &str {

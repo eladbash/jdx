@@ -39,7 +39,11 @@ pub fn parse(content: &str) -> Result<Value> {
 pub fn serialize(value: &Value) -> Result<String> {
     let arr = match value {
         Value::Array(arr) => arr,
-        _ => bail!("CSV output requires a JSON array"),
+        _ => bail!(
+            "CSV output requires a JSON array of objects.\n\
+             Hint: use -Q to query into an array first, e.g.:\n  \
+             jdx -Q '.items' --output csv data.json"
+        ),
     };
 
     if arr.is_empty() {

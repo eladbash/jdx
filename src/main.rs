@@ -14,6 +14,49 @@ use jdx::app::App;
 use jdx::engine;
 use jdx::format::{detect_format, format_output, parse_input, DataFormat};
 
+/// Reopen `/dev/tty` as stdin (fd 0) so that both crossterm's event reader
+/// and `enable_raw_mode()` can access the real terminal after data was piped
+/// through stdin.
+#[cfg(unix)]
+fn reopen_tty_stdin() -> Result<()> {
+    use std::os::unix::io::AsRawFd;
+
+    // Open with read+write to match what crossterm expects internally
+    let tty = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/tty")
+        .context(
+            "Failed to open /dev/tty — interactive mode requires a terminal.\n\
+             Hint: use --non-interactive when piping data through other programs.",
+        )?;
+
+    let tty_fd = tty.as_raw_fd();
+
+    // SAFETY: dup2 atomically replaces fd 0 with a copy of tty_fd.
+    // This is safe because we own both file descriptors.
+    let ret = unsafe { libc::dup2(tty_fd, libc::STDIN_FILENO) };
+    if ret == -1 {
+        bail!(
+            "Failed to redirect /dev/tty to stdin (errno: {})",
+            std::io::Error::last_os_error()
+        );
+    }
+
+    // Intentionally leak `tty` — its fd is now duplicated onto fd 0.
+    // Dropping it would close tty_fd but fd 0 remains valid.
+    std::mem::forget(tty);
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn reopen_tty_stdin() -> Result<()> {
+    bail!(
+        "Interactive mode with piped input is not supported on this platform.\n\
+         Use --non-interactive or pass a file argument instead."
+    );
+}
+
 /// jdx — JSON Data eXplorer
 ///
 /// An interactive, AI-augmented terminal tool for exploring JSON data.
@@ -52,6 +95,7 @@ struct Cli {
     /// Non-interactive mode: evaluate query and print result
     #[arg(long = "non-interactive")]
     non_interactive: bool,
+
 }
 
 fn main() -> Result<()> {
@@ -69,27 +113,26 @@ fn main() -> Result<()> {
     // Parse input
     let data = parse_input(&content, input_format).context("Failed to parse input data")?;
 
-    // Non-interactive mode: just evaluate and print
-    if cli.non_interactive
-        || cli.initial_query.is_some() && io::stdout().is_terminal() && io::stdin().is_terminal()
-    {
-        if let Some(ref query_str) = cli.initial_query {
-            // Quick non-interactive path evaluation
-            if !io::stdin().is_terminal() || cli.non_interactive {
-                let segments = engine::query::parse(query_str)?;
-                let result = engine::json::traverse(&data, &segments);
-                match result.value {
-                    Some(val) => {
-                        let output = format_output_value(&val, &cli)?;
-                        print!("{output}");
-                        return Ok(());
-                    }
-                    None => {
-                        bail!("No match for query: {query_str}");
-                    }
-                }
+    // Non-interactive mode: evaluate query and print result, then exit
+    if cli.non_interactive {
+        let query_str = cli.initial_query.as_deref().unwrap_or(".");
+        let segments = engine::query::parse(query_str)?;
+        let result = engine::json::traverse(&data, &segments);
+        match result.value {
+            Some(val) => {
+                let output = format_output_value(&val, &cli)?;
+                print!("{output}");
+                return Ok(());
+            }
+            None => {
+                bail!("No match for query: {query_str}");
             }
         }
+    }
+
+    // If stdin was piped, reopen /dev/tty so crossterm can read key events
+    if !io::stdin().is_terminal() {
+        reopen_tty_stdin()?;
     }
 
     // Interactive mode
@@ -147,6 +190,9 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
         if app.should_quit {
             break;
         }
+
+        // Check for AI results from background thread
+        app.poll_ai_result();
 
         // Poll for events with a small timeout for responsive rendering
         if event::poll(Duration::from_millis(50))? {

@@ -2,9 +2,11 @@
 
 An interactive, AI-augmented terminal tool for exploring JSON data. Think `jq` meets a code editor — with fuzzy search, tree navigation, schema inspection, and natural language querying.
 
-[![CI](https://github.com/yourname/jdx/actions/workflows/ci.yml/badge.svg)](https://github.com/yourname/jdx/actions/workflows/ci.yml)
+[![CI](https://github.com/eladbash/jdx/actions/workflows/ci.yml/badge.svg)](https://github.com/eladbash/jdx/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/jdx.svg)](https://crates.io/crates/jdx)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+![jdx demo](demo.gif)
 
 ---
 
@@ -30,12 +32,12 @@ scoop install jdx
 
 ### Pre-built Binaries
 
-Download from [GitHub Releases](https://github.com/yourname/jdx/releases) — available for Linux, macOS, and Windows (x86_64 and aarch64).
+Download from [GitHub Releases](https://github.com/eladbash/jdx/releases) — available for Linux, macOS, and Windows (x86_64 and aarch64).
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/yourname/jdx.git
+git clone https://github.com/eladbash/jdx.git
 cd jdx
 cargo build --release
 # Binary at: target/release/jdx
@@ -87,6 +89,31 @@ Press **S** to toggle schema view. Infers the shape of your JSON data — types,
 }
 ```
 
+### Filter Predicates
+
+Filter arrays inline using bracket predicates:
+
+```
+.store.books[price < 10]              # books cheaper than $10
+.users[role == "admin"]               # admin users only
+.users[age >= 30]                     # users 30 and older
+.items[status != "deleted"]           # exclude deleted items
+.users[active == true]                # only active users
+.items[deleted == null]               # items without a deleted field
+```
+
+Supported operators: `==`, `!=`, `<`, `>`, `<=`, `>=`
+
+Values can be numbers (`10`, `3.5`), quoted strings (`"admin"`), booleans (`true`/`false`), or `null`.
+
+Filters can be combined with path navigation and transforms:
+
+```
+.store.books[price < 10].title        # titles of cheap books
+.store.books[price < 15] :pick title,price :sort price
+.users[role == "admin"] :count        # count admin users
+```
+
 ### Inline Data Transforms
 
 Chain transforms after your query using `:` commands:
@@ -102,15 +129,31 @@ Chain transforms after your query using `:` commands:
 | `:sort` | Sort by field | `.users :sort age` |
 | `:uniq` | Deduplicate | `.tags :uniq` |
 | `:group_by` | Group by field | `.users :group_by role` |
+| `:filter` | Filter by predicate | `.users :filter age > 30` |
+| `:sum` | Sum numeric values | `.orders :sum total` |
+| `:avg` | Average numeric values | `.scores :avg value` |
+| `:min` | Minimum value | `.products :min price` |
+| `:max` | Maximum value | `.products :max price` |
+
+The `:filter` transform is equivalent to the bracket predicate syntax but works as a chained transform. Aggregate commands (`:sum`, `:avg`, `:min`, `:max`) work on arrays of numbers or on a specific field from objects:
+
+```
+.store.books :filter price < 10 :pick title,price
+.users :pick name,age :filter age > 25 :sort age
+.store.books :sum price                    # total of all book prices
+.store.books :filter price < 15 :avg price # average of cheap books
+.scores :min                               # minimum of a numeric array
+```
 
 ### Natural Language AI Querying
 
 Press **/** to switch to AI mode. Ask questions in plain English:
 
-> "find all users older than 30"
-> "what is the first book title?"
+> "what is the total price of all books?"
+> "which books cost less than $10?"
+> "who are the admin users?"
 
-The AI generates the equivalent dot-notation path. Supports OpenAI, Anthropic, and local Ollama models.
+The AI **answers your question directly** in natural language and optionally suggests a jdx query you can apply by pressing Enter. It sees the actual data, so it can compute totals, averages, find specific items, and more. Supports OpenAI, Anthropic, and local Ollama models.
 
 ### Multi-Format Input/Output
 
@@ -182,7 +225,7 @@ Query history is saved across sessions. Press **Ctrl+R** to search through past 
 | Key | Action |
 |-----|--------|
 | Type freely | Enter natural language question |
-| **Enter** | Send query to AI |
+| **Enter** | Send question to AI / Apply suggested query |
 | **Esc** | Back to query mode |
 
 ---
@@ -257,6 +300,7 @@ Options:
 | Schema inspector | Yes | No | No | No | No |
 | AI queries | Yes | No | No | No | No |
 | Inline transforms | Yes | No | Yes (pipe) | Yes (JS) | No |
+| Filter predicates | Yes | No | Yes | Yes (JS) | No |
 | Multi-format input | Yes | No | No | Yes | No |
 | Streaming NDJSON | Yes | No | Yes | Yes | No |
 | Clipboard copy | Yes | No | No | No | No |
@@ -270,7 +314,7 @@ Options:
 
 ```bash
 # Clone and build
-git clone https://github.com/yourname/jdx.git
+git clone https://github.com/eladbash/jdx.git
 cd jdx
 cargo build
 

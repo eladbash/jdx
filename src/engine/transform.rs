@@ -2,11 +2,61 @@ use anyhow::{bail, Result};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-/// Parse and execute a transform command on a JSON value.
+use super::json::eval_predicate;
+use super::query::parse_predicate;
+
+/// Parse and execute one or more chained transform commands on a JSON value.
 ///
 /// Transform commands start with `:` and operate on the current value.
+/// Multiple commands can be chained: `:pick name,age :sort age`
 /// Supported commands: :keys, :values, :count, :flatten, :pick, :omit, :sort, :uniq, :group_by
 pub fn apply_transform(value: &Value, command: &str) -> Result<Value> {
+    let commands = split_chain(command);
+    let mut result = value.clone();
+    for single_cmd in commands {
+        result = apply_single_transform(&result, &single_cmd)?;
+    }
+    Ok(result)
+}
+
+/// Split a (possibly chained) transform string into individual commands.
+/// e.g. ":pick name,age :sort age" → [":pick name,age", ":sort age"]
+fn split_chain(input: &str) -> Vec<String> {
+    let input = input.trim();
+    let mut commands = Vec::new();
+    let mut current_start = 0;
+
+    // Walk through the string looking for ` :` boundaries (space then colon)
+    // that start a new transform command.
+    let bytes = input.as_bytes();
+    for i in 1..bytes.len() {
+        if bytes[i] == b':' && bytes[i - 1] == b' ' {
+            // Check if this is the very first command (starts at position 0 with `:`)
+            if current_start == 0 && bytes[0] == b':' && i > current_start {
+                let chunk = input[current_start..i].trim();
+                if !chunk.is_empty() {
+                    commands.push(chunk.to_string());
+                }
+                current_start = i;
+            } else if current_start < i {
+                let chunk = input[current_start..i].trim();
+                if !chunk.is_empty() {
+                    commands.push(chunk.to_string());
+                }
+                current_start = i;
+            }
+        }
+    }
+    // Push the last segment
+    let chunk = input[current_start..].trim();
+    if !chunk.is_empty() {
+        commands.push(chunk.to_string());
+    }
+    commands
+}
+
+/// Apply a single transform command (no chaining).
+fn apply_single_transform(value: &Value, command: &str) -> Result<Value> {
     let command = command.trim();
     let (cmd, args) = match command.split_once(' ') {
         Some((c, a)) => (c, a.trim()),
@@ -23,6 +73,11 @@ pub fn apply_transform(value: &Value, command: &str) -> Result<Value> {
         ":sort" => transform_sort(value, args),
         ":uniq" => transform_uniq(value),
         ":group_by" => transform_group_by(value, args),
+        ":filter" => transform_filter(value, args),
+        ":sum" => transform_sum(value, args),
+        ":avg" => transform_avg(value, args),
+        ":min" => transform_min(value, args),
+        ":max" => transform_max(value, args),
         _ => bail!("unknown transform command: {cmd}"),
     }
 }
@@ -226,6 +281,102 @@ fn transform_group_by(value: &Value, args: &str) -> Result<Value> {
     }
 }
 
+/// Filter array elements by a predicate.
+/// Usage: `:filter price < 10` or `:filter name == "Alice"`
+fn transform_filter(value: &Value, args: &str) -> Result<Value> {
+    if args.is_empty() {
+        bail!(":filter requires a predicate (e.g., :filter price < 10)");
+    }
+
+    let pred = parse_predicate(args)
+        .map_err(|e| anyhow::anyhow!(":filter invalid predicate: {e}"))?;
+
+    match value {
+        Value::Array(arr) => {
+            let filtered: Vec<Value> = arr
+                .iter()
+                .filter(|item| eval_predicate(item, &pred))
+                .cloned()
+                .collect();
+            Ok(Value::Array(filtered))
+        }
+        _ => bail!(":filter requires an array"),
+    }
+}
+
+/// Sum numeric values in an array, or sum a specific field from objects.
+/// Usage: `:sum` or `:sum price`
+fn transform_sum(value: &Value, args: &str) -> Result<Value> {
+    let nums = extract_numbers(value, args, ":sum")?;
+    let total: f64 = nums.iter().sum();
+    Ok(number_to_value(total))
+}
+
+/// Average numeric values in an array, or average a specific field from objects.
+/// Usage: `:avg` or `:avg price`
+fn transform_avg(value: &Value, args: &str) -> Result<Value> {
+    let nums = extract_numbers(value, args, ":avg")?;
+    if nums.is_empty() {
+        return Ok(Value::Null);
+    }
+    let total: f64 = nums.iter().sum();
+    let avg = total / nums.len() as f64;
+    Ok(number_to_value(avg))
+}
+
+/// Minimum value in an array, or minimum of a specific field from objects.
+/// Usage: `:min` or `:min price`
+fn transform_min(value: &Value, args: &str) -> Result<Value> {
+    let nums = extract_numbers(value, args, ":min")?;
+    match nums.iter().copied().reduce(f64::min) {
+        Some(v) => Ok(number_to_value(v)),
+        None => Ok(Value::Null),
+    }
+}
+
+/// Maximum value in an array, or maximum of a specific field from objects.
+/// Usage: `:max` or `:max price`
+fn transform_max(value: &Value, args: &str) -> Result<Value> {
+    let nums = extract_numbers(value, args, ":max")?;
+    match nums.iter().copied().reduce(f64::max) {
+        Some(v) => Ok(number_to_value(v)),
+        None => Ok(Value::Null),
+    }
+}
+
+/// Extract numeric values from an array. If `field` is given, extract from objects.
+fn extract_numbers(value: &Value, args: &str, cmd_name: &str) -> Result<Vec<f64>> {
+    let field = args.trim();
+    match value {
+        Value::Array(arr) => {
+            let mut nums = Vec::new();
+            for item in arr {
+                let v = if field.is_empty() {
+                    item
+                } else {
+                    item.get(field).unwrap_or(&Value::Null)
+                };
+                if let Some(n) = v.as_f64() {
+                    nums.push(n);
+                }
+            }
+            Ok(nums)
+        }
+        _ => bail!("{cmd_name} requires an array"),
+    }
+}
+
+/// Convert an f64 to a JSON Value, using integer representation when possible.
+fn number_to_value(n: f64) -> Value {
+    if n.fract() == 0.0 && n.abs() < (i64::MAX as f64) {
+        Value::Number(serde_json::Number::from(n as i64))
+    } else {
+        serde_json::Number::from_f64(n)
+            .map(Value::Number)
+            .unwrap_or(Value::Null)
+    }
+}
+
 /// Compare two JSON values for sorting.
 fn compare_values(a: &Value, b: &Value) -> std::cmp::Ordering {
     match (a, b) {
@@ -379,5 +530,197 @@ mod tests {
         let obj = result.as_object().unwrap();
         assert!(obj.contains_key("a"));
         assert!(obj.contains_key("null"));
+    }
+
+    // --- :filter transform tests ---
+
+    #[test]
+    fn test_filter_number_lt() {
+        let data = json!([
+            {"name": "A", "price": 5},
+            {"name": "B", "price": 15},
+            {"name": "C", "price": 8}
+        ]);
+        let result = apply_transform(&data, ":filter price < 10").unwrap();
+        let arr = result.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["name"], "A");
+        assert_eq!(arr[1]["name"], "C");
+    }
+
+    #[test]
+    fn test_filter_string_eq() {
+        let data = json!([
+            {"name": "Alice", "role": "admin"},
+            {"name": "Bob", "role": "user"}
+        ]);
+        let result = apply_transform(&data, ":filter role == \"admin\"").unwrap();
+        let arr = result.as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["name"], "Alice");
+    }
+
+    #[test]
+    fn test_filter_ge() {
+        let data = json!([
+            {"score": 85},
+            {"score": 90},
+            {"score": 95}
+        ]);
+        let result = apply_transform(&data, ":filter score >= 90").unwrap();
+        let arr = result.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+    }
+
+    #[test]
+    fn test_filter_chained_with_pick() {
+        let data = json!([
+            {"name": "Alice", "age": 25, "email": "a@t.com"},
+            {"name": "Bob", "age": 35, "email": "b@t.com"},
+            {"name": "Carol", "age": 40, "email": "c@t.com"}
+        ]);
+        let result = apply_transform(&data, ":filter age > 30 :pick name,age").unwrap();
+        let arr = result.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0], json!({"name": "Bob", "age": 35}));
+        assert_eq!(arr[1], json!({"name": "Carol", "age": 40}));
+    }
+
+    #[test]
+    fn test_filter_empty_args() {
+        let data = json!([1, 2, 3]);
+        let result = apply_transform(&data, ":filter");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_filter_on_non_array() {
+        let data = json!({"a": 1});
+        let result = apply_transform(&data, ":filter a > 0");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_filter_bool_value() {
+        let data = json!([
+            {"name": "Alice", "active": true},
+            {"name": "Bob", "active": false}
+        ]);
+        let result = apply_transform(&data, ":filter active == true").unwrap();
+        let arr = result.as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["name"], "Alice");
+    }
+
+    #[test]
+    fn test_filter_chained_with_sort_and_count() {
+        let data = json!([
+            {"name": "A", "price": 5},
+            {"name": "B", "price": 15},
+            {"name": "C", "price": 3},
+            {"name": "D", "price": 8}
+        ]);
+        let result = apply_transform(&data, ":filter price < 10 :sort price :count").unwrap();
+        assert_eq!(result, json!(3));
+    }
+
+    // --- :sum, :avg, :min, :max tests ---
+
+    #[test]
+    fn test_sum_primitives() {
+        let data = json!([1, 2, 3, 4]);
+        let result = apply_transform(&data, ":sum").unwrap();
+        assert_eq!(result, json!(10));
+    }
+
+    #[test]
+    fn test_sum_by_field() {
+        let data = json!([
+            {"name": "A", "price": 10.99},
+            {"name": "B", "price": 8.99},
+            {"name": "C", "price": 32.99}
+        ]);
+        let result = apply_transform(&data, ":sum price").unwrap();
+        // 10.99 + 8.99 + 32.99 = 52.97
+        assert_eq!(result.as_f64().unwrap(), 52.97);
+    }
+
+    #[test]
+    fn test_avg_primitives() {
+        let data = json!([10, 20, 30]);
+        let result = apply_transform(&data, ":avg").unwrap();
+        assert_eq!(result, json!(20));
+    }
+
+    #[test]
+    fn test_avg_by_field() {
+        let data = json!([
+            {"score": 80},
+            {"score": 90},
+            {"score": 100}
+        ]);
+        let result = apply_transform(&data, ":avg score").unwrap();
+        assert_eq!(result, json!(90));
+    }
+
+    #[test]
+    fn test_avg_empty() {
+        let data = json!([]);
+        let result = apply_transform(&data, ":avg").unwrap();
+        assert_eq!(result, json!(null));
+    }
+
+    #[test]
+    fn test_min_primitives() {
+        let data = json!([5, 2, 8, 1, 9]);
+        let result = apply_transform(&data, ":min").unwrap();
+        assert_eq!(result, json!(1));
+    }
+
+    #[test]
+    fn test_min_by_field() {
+        let data = json!([
+            {"name": "A", "price": 10.99},
+            {"name": "B", "price": 8.99},
+            {"name": "C", "price": 32.99}
+        ]);
+        let result = apply_transform(&data, ":min price").unwrap();
+        assert_eq!(result.as_f64().unwrap(), 8.99);
+    }
+
+    #[test]
+    fn test_max_primitives() {
+        let data = json!([5, 2, 8, 1, 9]);
+        let result = apply_transform(&data, ":max").unwrap();
+        assert_eq!(result, json!(9));
+    }
+
+    #[test]
+    fn test_max_by_field() {
+        let data = json!([
+            {"name": "A", "price": 10.99},
+            {"name": "B", "price": 8.99},
+            {"name": "C", "price": 32.99}
+        ]);
+        let result = apply_transform(&data, ":max price").unwrap();
+        assert_eq!(result.as_f64().unwrap(), 32.99);
+    }
+
+    #[test]
+    fn test_sum_chained_with_filter() {
+        let data = json!([
+            {"name": "A", "price": 5},
+            {"name": "B", "price": 15},
+            {"name": "C", "price": 8}
+        ]);
+        let result = apply_transform(&data, ":filter price < 10 :sum price").unwrap();
+        assert_eq!(result, json!(13));
+    }
+
+    #[test]
+    fn test_sum_on_non_array() {
+        let data = json!({"a": 1});
+        let result = apply_transform(&data, ":sum");
+        assert!(result.is_err());
     }
 }

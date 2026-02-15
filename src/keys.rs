@@ -101,6 +101,11 @@ pub fn map_key_event(event: KeyEvent) -> Action {
         KeyCode::Tab => Action::Tab,
         KeyCode::BackTab => Action::BackTab,
 
+        // Mode switches (must be before the generic InsertChar catch-all)
+        KeyCode::Char('/') if !ctrl => Action::SwitchToAi,
+        KeyCode::Char('S') if !ctrl => Action::SwitchToSchema,
+        KeyCode::Char('\\') if ctrl => Action::ToggleSplitView,
+
         // Editing
         KeyCode::Backspace => Action::Backspace,
         KeyCode::Delete => Action::Delete,

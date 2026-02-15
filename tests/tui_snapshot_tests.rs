@@ -21,6 +21,7 @@ fn test_query_input_renders_prompt() {
                 cursor: 14,
                 completion: None,
                 error: false,
+                focused: true,
             };
             frame.render_widget(widget, area);
         })
@@ -45,6 +46,7 @@ fn test_query_input_with_completion() {
                 cursor: 3,
                 completion: Some("ers"),
                 error: false,
+                focused: true,
             };
             frame.render_widget(widget, area);
         })

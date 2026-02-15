@@ -1,5 +1,36 @@
 use thiserror::Error;
 
+/// Comparison operator for filter predicates.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CompareOp {
+    Eq,  // ==
+    Ne,  // !=
+    Lt,  // <
+    Gt,  // >
+    Le,  // <=
+    Ge,  // >=
+}
+
+/// A value literal in a filter predicate.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FilterValue {
+    String(String),
+    Number(f64),
+    Bool(bool),
+    Null,
+}
+
+// Manual Eq impl because f64 doesn't implement Eq, but we need it for PathSegment.
+impl Eq for FilterValue {}
+
+/// A filter predicate: `field op value` (e.g., `price < 10`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Predicate {
+    pub field: String,
+    pub op: CompareOp,
+    pub value: FilterValue,
+}
+
 /// A single segment of a JSON path query.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PathSegment {
@@ -11,6 +42,8 @@ pub enum PathSegment {
     Slice(Option<i64>, Option<i64>),
     /// Wildcard: `[*]` or `.*`
     Wildcard,
+    /// Filter predicate on array: `[price < 10]`
+    Filter(Predicate),
 }
 
 /// Error from parsing a query string.
@@ -26,8 +59,65 @@ pub enum QueryError {
     UnclosedQuote { pos: usize },
     #[error("invalid index '{value}' at position {pos}")]
     InvalidIndex { value: String, pos: usize },
+    #[error("invalid filter predicate '{expr}' at position {pos}")]
+    InvalidPredicate { expr: String, pos: usize },
     #[error("empty query")]
     Empty,
+}
+
+/// Parse a predicate expression like `price < 10` or `name == "Alice"`.
+pub fn parse_predicate(expr: &str) -> Result<Predicate, String> {
+    let expr = expr.trim();
+
+    // Try two-char operators first, then single-char
+    let ops = [("==", CompareOp::Eq), ("!=", CompareOp::Ne), ("<=", CompareOp::Le), (">=", CompareOp::Ge), ("<", CompareOp::Lt), (">", CompareOp::Gt)];
+
+    for (op_str, op) in &ops {
+        if let Some(idx) = expr.find(op_str) {
+            let field = expr[..idx].trim().to_string();
+            let value_str = expr[idx + op_str.len()..].trim();
+
+            if field.is_empty() || value_str.is_empty() {
+                return Err(format!("incomplete predicate: {expr}"));
+            }
+
+            let value = parse_filter_value(value_str)?;
+            return Ok(Predicate { field, op: op.clone(), value });
+        }
+    }
+
+    Err(format!("no valid operator found in: {expr}"))
+}
+
+/// Parse a filter value literal: string, number, bool, or null.
+fn parse_filter_value(s: &str) -> Result<FilterValue, String> {
+    let s = s.trim();
+
+    // Quoted string
+    if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
+        return Ok(FilterValue::String(s[1..s.len() - 1].to_string()));
+    }
+
+    // Boolean
+    if s == "true" {
+        return Ok(FilterValue::Bool(true));
+    }
+    if s == "false" {
+        return Ok(FilterValue::Bool(false));
+    }
+
+    // Null
+    if s == "null" {
+        return Ok(FilterValue::Null);
+    }
+
+    // Number
+    if let Ok(n) = s.parse::<f64>() {
+        return Ok(FilterValue::Number(n));
+    }
+
+    // Unquoted string (treat as string literal)
+    Ok(FilterValue::String(s.to_string()))
 }
 
 /// Parse a dot-notation query string into path segments.
@@ -224,11 +314,29 @@ fn parse_bracket(
                 segments.push(PathSegment::Index(idx));
             }
         }
+        // Anything else: try to parse as a filter predicate (e.g., `[price < 10]`)
         _ => {
-            return Err(QueryError::UnexpectedChar {
-                ch: chars[i],
-                pos: i,
-            });
+            let content_start = i;
+            while i < len && chars[i] != ']' {
+                i += 1;
+            }
+            if i >= len {
+                return Err(QueryError::UnclosedBracket { pos: bracket_start });
+            }
+            let content: String = chars[content_start..i].iter().collect();
+            i += 1; // skip `]`
+
+            match parse_predicate(&content) {
+                Ok(pred) => {
+                    segments.push(PathSegment::Filter(pred));
+                }
+                Err(_) => {
+                    return Err(QueryError::InvalidPredicate {
+                        expr: content,
+                        pos: content_start,
+                    });
+                }
+            }
         }
     }
 
@@ -420,5 +528,138 @@ mod tests {
     #[test]
     fn test_get_last_keyword_empty() {
         assert_eq!(get_last_keyword(""), "");
+    }
+
+    // --- Filter predicate tests ---
+
+    #[test]
+    fn test_parse_filter_number_lt() {
+        let result = parse(".books[price < 10]").unwrap();
+        assert_eq!(
+            result,
+            vec![
+                PathSegment::Key("books".into()),
+                PathSegment::Filter(Predicate {
+                    field: "price".into(),
+                    op: CompareOp::Lt,
+                    value: FilterValue::Number(10.0),
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_filter_string_eq() {
+        let result = parse(".users[role == \"admin\"]").unwrap();
+        assert_eq!(
+            result,
+            vec![
+                PathSegment::Key("users".into()),
+                PathSegment::Filter(Predicate {
+                    field: "role".into(),
+                    op: CompareOp::Eq,
+                    value: FilterValue::String("admin".into()),
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_filter_ge() {
+        let result = parse(".items[score >= 90]").unwrap();
+        assert_eq!(
+            result,
+            vec![
+                PathSegment::Key("items".into()),
+                PathSegment::Filter(Predicate {
+                    field: "score".into(),
+                    op: CompareOp::Ge,
+                    value: FilterValue::Number(90.0),
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_filter_ne() {
+        let result = parse(".items[status != \"deleted\"]").unwrap();
+        assert_eq!(
+            result,
+            vec![
+                PathSegment::Key("items".into()),
+                PathSegment::Filter(Predicate {
+                    field: "status".into(),
+                    op: CompareOp::Ne,
+                    value: FilterValue::String("deleted".into()),
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_filter_bool() {
+        let result = parse(".users[active == true]").unwrap();
+        assert_eq!(
+            result,
+            vec![
+                PathSegment::Key("users".into()),
+                PathSegment::Filter(Predicate {
+                    field: "active".into(),
+                    op: CompareOp::Eq,
+                    value: FilterValue::Bool(true),
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_filter_null() {
+        let result = parse(".items[deleted == null]").unwrap();
+        assert_eq!(
+            result,
+            vec![
+                PathSegment::Key("items".into()),
+                PathSegment::Filter(Predicate {
+                    field: "deleted".into(),
+                    op: CompareOp::Eq,
+                    value: FilterValue::Null,
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_filter_with_continuation() {
+        let result = parse(".store.books[price < 10].title").unwrap();
+        assert_eq!(
+            result,
+            vec![
+                PathSegment::Key("store".into()),
+                PathSegment::Key("books".into()),
+                PathSegment::Filter(Predicate {
+                    field: "price".into(),
+                    op: CompareOp::Lt,
+                    value: FilterValue::Number(10.0),
+                }),
+                PathSegment::Key("title".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_predicate_all_ops() {
+        assert_eq!(parse_predicate("a == 1").unwrap().op, CompareOp::Eq);
+        assert_eq!(parse_predicate("a != 1").unwrap().op, CompareOp::Ne);
+        assert_eq!(parse_predicate("a < 1").unwrap().op, CompareOp::Lt);
+        assert_eq!(parse_predicate("a > 1").unwrap().op, CompareOp::Gt);
+        assert_eq!(parse_predicate("a <= 1").unwrap().op, CompareOp::Le);
+        assert_eq!(parse_predicate("a >= 1").unwrap().op, CompareOp::Ge);
+    }
+
+    #[test]
+    fn test_parse_predicate_float() {
+        let pred = parse_predicate("price < 9.99").unwrap();
+        assert_eq!(pred.field, "price");
+        assert_eq!(pred.value, FilterValue::Number(9.99));
     }
 }

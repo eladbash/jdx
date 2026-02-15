@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use super::query::PathSegment;
+use super::query::{CompareOp, FilterValue, PathSegment, Predicate};
 
 /// Result of traversing JSON with a parsed query.
 #[derive(Debug, Clone)]
@@ -131,6 +131,38 @@ pub fn traverse(root: &Value, segments: &[PathSegment]) -> TraversalResult {
                     }
                 }
             }
+            PathSegment::Filter(pred) => {
+                if let Some(arr) = current.as_array() {
+                    let filtered: Vec<Value> = arr
+                        .iter()
+                        .filter(|item| eval_predicate(item, pred))
+                        .cloned()
+                        .collect();
+                    // Continue traversal with remaining segments
+                    let remaining = &segments[depth + 1..];
+                    let filtered_val = Value::Array(filtered);
+                    if remaining.is_empty() {
+                        return TraversalResult {
+                            value: Some(filtered_val),
+                            parent: Some(current.clone()),
+                            depth: depth + 1,
+                        };
+                    } else {
+                        let sub = traverse(&filtered_val, remaining);
+                        return TraversalResult {
+                            value: sub.value,
+                            parent: sub.parent.or(Some(filtered_val)),
+                            depth: depth + 1 + sub.depth,
+                        };
+                    }
+                } else {
+                    return TraversalResult {
+                        value: None,
+                        parent: Some(current.clone()),
+                        depth,
+                    };
+                }
+            }
         }
     }
 
@@ -138,6 +170,73 @@ pub fn traverse(root: &Value, segments: &[PathSegment]) -> TraversalResult {
         value: Some(current.clone()),
         parent: parent.cloned(),
         depth,
+    }
+}
+
+/// Evaluate a filter predicate against a JSON value.
+/// The value is expected to be an object; the predicate's field is looked up in it.
+pub fn eval_predicate(value: &Value, pred: &Predicate) -> bool {
+    let field_val = match value.get(&pred.field) {
+        Some(v) => v,
+        None => return false,
+    };
+
+    match &pred.value {
+        FilterValue::Number(n) => {
+            if let Some(fv) = field_val.as_f64() {
+                compare_f64(fv, *n, &pred.op)
+            } else {
+                false
+            }
+        }
+        FilterValue::String(s) => {
+            if let Some(fv) = field_val.as_str() {
+                compare_str(fv, s, &pred.op)
+            } else {
+                false
+            }
+        }
+        FilterValue::Bool(b) => {
+            if let Some(fv) = field_val.as_bool() {
+                match pred.op {
+                    CompareOp::Eq => fv == *b,
+                    CompareOp::Ne => fv != *b,
+                    _ => false, // ordering on bools doesn't make sense
+                }
+            } else {
+                false
+            }
+        }
+        FilterValue::Null => {
+            let is_null = field_val.is_null();
+            match pred.op {
+                CompareOp::Eq => is_null,
+                CompareOp::Ne => !is_null,
+                _ => false,
+            }
+        }
+    }
+}
+
+fn compare_f64(a: f64, b: f64, op: &CompareOp) -> bool {
+    match op {
+        CompareOp::Eq => (a - b).abs() < f64::EPSILON,
+        CompareOp::Ne => (a - b).abs() >= f64::EPSILON,
+        CompareOp::Lt => a < b,
+        CompareOp::Gt => a > b,
+        CompareOp::Le => a <= b,
+        CompareOp::Ge => a >= b,
+    }
+}
+
+fn compare_str(a: &str, b: &str, op: &CompareOp) -> bool {
+    match op {
+        CompareOp::Eq => a == b,
+        CompareOp::Ne => a != b,
+        CompareOp::Lt => a < b,
+        CompareOp::Gt => a > b,
+        CompareOp::Le => a <= b,
+        CompareOp::Ge => a >= b,
     }
 }
 
@@ -292,5 +391,156 @@ mod tests {
         let data = json!(42);
         let keys = get_available_keys(&data);
         assert!(keys.is_empty());
+    }
+
+    // --- Filter traversal tests ---
+
+    #[test]
+    fn test_traverse_filter_number_lt() {
+        let data = json!({
+            "books": [
+                {"title": "A", "price": 5},
+                {"title": "B", "price": 15},
+                {"title": "C", "price": 8}
+            ]
+        });
+        let segments = vec![
+            PathSegment::Key("books".into()),
+            PathSegment::Filter(Predicate {
+                field: "price".into(),
+                op: CompareOp::Lt,
+                value: FilterValue::Number(10.0),
+            }),
+        ];
+        let result = traverse(&data, &segments);
+        let arr = result.value.unwrap();
+        let arr = arr.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["title"], "A");
+        assert_eq!(arr[1]["title"], "C");
+    }
+
+    #[test]
+    fn test_traverse_filter_string_eq() {
+        let data = json!({
+            "users": [
+                {"name": "Alice", "role": "admin"},
+                {"name": "Bob", "role": "user"},
+                {"name": "Carol", "role": "admin"}
+            ]
+        });
+        let segments = vec![
+            PathSegment::Key("users".into()),
+            PathSegment::Filter(Predicate {
+                field: "role".into(),
+                op: CompareOp::Eq,
+                value: FilterValue::String("admin".into()),
+            }),
+        ];
+        let result = traverse(&data, &segments);
+        let arr = result.value.unwrap();
+        let arr = arr.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["name"], "Alice");
+        assert_eq!(arr[1]["name"], "Carol");
+    }
+
+    #[test]
+    fn test_traverse_filter_bool() {
+        let data = json!([
+            {"name": "Alice", "active": true},
+            {"name": "Bob", "active": false},
+            {"name": "Carol", "active": true}
+        ]);
+        let segments = vec![
+            PathSegment::Filter(Predicate {
+                field: "active".into(),
+                op: CompareOp::Eq,
+                value: FilterValue::Bool(true),
+            }),
+        ];
+        let result = traverse(&data, &segments);
+        let arr = result.value.unwrap();
+        let arr = arr.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+    }
+
+    #[test]
+    fn test_traverse_filter_with_continuation() {
+        let data = json!({
+            "items": [
+                {"name": "A", "price": 5},
+                {"name": "B", "price": 15}
+            ]
+        });
+        // .items[price < 10].name — filter returns array, then .name should not resolve
+        // since the result is an array of objects, not a single object.
+        // But let's test that filter + further key access works as traversal stops:
+        let segments = vec![
+            PathSegment::Key("items".into()),
+            PathSegment::Filter(Predicate {
+                field: "price".into(),
+                op: CompareOp::Lt,
+                value: FilterValue::Number(10.0),
+            }),
+        ];
+        let result = traverse(&data, &segments);
+        let arr = result.value.unwrap();
+        let arr = arr.as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["name"], "A");
+    }
+
+    #[test]
+    fn test_traverse_filter_no_matches() {
+        let data = json!([
+            {"val": 1},
+            {"val": 2}
+        ]);
+        let segments = vec![
+            PathSegment::Filter(Predicate {
+                field: "val".into(),
+                op: CompareOp::Gt,
+                value: FilterValue::Number(100.0),
+            }),
+        ];
+        let result = traverse(&data, &segments);
+        assert_eq!(result.value, Some(json!([])));
+    }
+
+    #[test]
+    fn test_traverse_filter_on_non_array() {
+        let data = json!({"a": 1});
+        let segments = vec![
+            PathSegment::Filter(Predicate {
+                field: "a".into(),
+                op: CompareOp::Eq,
+                value: FilterValue::Number(1.0),
+            }),
+        ];
+        let result = traverse(&data, &segments);
+        assert_eq!(result.value, None);
+    }
+
+    #[test]
+    fn test_eval_predicate_null() {
+        let item = json!({"name": "test", "deleted": null});
+        let pred = Predicate {
+            field: "deleted".into(),
+            op: CompareOp::Eq,
+            value: FilterValue::Null,
+        };
+        assert!(eval_predicate(&item, &pred));
+    }
+
+    #[test]
+    fn test_eval_predicate_missing_field() {
+        let item = json!({"name": "test"});
+        let pred = Predicate {
+            field: "missing".into(),
+            op: CompareOp::Eq,
+            value: FilterValue::Number(1.0),
+        };
+        assert!(!eval_predicate(&item, &pred));
     }
 }
