@@ -18,16 +18,10 @@ An interactive, AI-augmented terminal tool for exploring JSON data. Think `jq` m
 cargo install jdx
 ```
 
-### From Homebrew
+### From Homebrew (macOS / Linux)
 
 ```bash
-brew install jdx
-```
-
-### From Scoop (Windows)
-
-```bash
-scoop install jdx
+brew install eladbash/jdx/jdx
 ```
 
 ### Pre-built Binaries
