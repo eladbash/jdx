@@ -56,15 +56,18 @@ impl Widget for HelpOverlayWidget {
 fn get_bindings(mode: AppMode) -> Vec<(&'static str, &'static str)> {
     let mut bindings = vec![
         ("?", "Toggle this help"),
-        ("Esc / Ctrl+C", "Quit"),
-        ("Enter", "Confirm and output result"),
+        ("Ctrl+C", "Quit"),
     ];
 
     match mode {
         AppMode::Query => {
             bindings.extend([
+                ("Esc", "Quit"),
+                ("Enter", "Confirm and output result"),
                 ("Tab", "Complete / cycle candidates"),
                 ("Shift+Tab", "Cycle candidates backward"),
+                ("Ctrl+A/Home", "Cursor to start"),
+                ("Ctrl+E/End", "Cursor to end"),
                 ("Ctrl+L", "Toggle key-only mode"),
                 ("Ctrl+U", "Clear query"),
                 ("Ctrl+W", "Delete word backward"),
@@ -74,21 +77,32 @@ fn get_bindings(mode: AppMode) -> Vec<(&'static str, &'static str)> {
                 ("Ctrl+Y", "Copy current value"),
                 ("Ctrl+R", "Search history"),
                 ("Ctrl+D", "Add bookmark"),
+                ("Ctrl+S", "Toggle split view"),
+                ("S", "Schema view"),
+                ("/", "AI mode"),
             ]);
         }
         AppMode::Tree => {
             bindings.extend([
+                ("Esc / q", "Back to query mode"),
                 ("↑/↓", "Navigate tree"),
                 ("→/Enter", "Expand node"),
                 ("←", "Collapse node"),
                 ("Ctrl+J/K", "Scroll"),
+                ("Ctrl+S", "Close split view"),
             ]);
         }
         AppMode::Ai => {
-            bindings.extend([("Enter", "Send query to AI"), ("Esc", "Back to query mode")]);
+            bindings.extend([
+                ("Esc", "Back to query mode"),
+                ("Enter", "Send query / Apply suggestion"),
+            ]);
         }
         AppMode::Schema => {
-            bindings.extend([("Ctrl+J/K", "Scroll"), ("Esc", "Back to query mode")]);
+            bindings.extend([
+                ("Esc", "Back to query mode"),
+                ("Ctrl+J/K", "Scroll"),
+            ]);
         }
         AppMode::Help => {}
     }

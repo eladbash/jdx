@@ -104,6 +104,7 @@ pub fn map_key_event(event: KeyEvent) -> Action {
         // Mode switches (must be before the generic InsertChar catch-all)
         KeyCode::Char('/') if !ctrl => Action::SwitchToAi,
         KeyCode::Char('S') if !ctrl => Action::SwitchToSchema,
+        KeyCode::Char('s') if ctrl => Action::ToggleSplitView,
         KeyCode::Char('\\') if ctrl => Action::ToggleSplitView,
 
         // Editing

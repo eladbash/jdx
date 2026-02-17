@@ -5,6 +5,7 @@ pub mod config;
 pub mod engine;
 pub mod format;
 pub mod history;
+pub mod init;
 pub mod keys;
 pub mod modes;
 pub mod widgets;

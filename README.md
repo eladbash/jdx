@@ -42,6 +42,9 @@ cargo build --release
 ## Quick Start
 
 ```bash
+# Configure AI providers interactively
+jdx init
+
 # Pipe JSON from stdin
 echo '{"name": "Alice", "age": 30}' | jdx
 
@@ -69,7 +72,7 @@ Press **Tab** to see available keys at the current depth. Fuzzy matching ranks c
 
 ### Collapsible Tree View
 
-Press **Ctrl+\\** for a split panel with a tree navigator on the left. Expand and collapse nodes with arrow keys. The query input and tree stay synchronized.
+Press **Ctrl+S** for a split panel with a tree navigator on the left. Expand and collapse nodes with arrow keys. The query input and tree stay synchronized.
 
 ### Schema Inspector
 
@@ -200,7 +203,7 @@ Query history is saved across sessions. Press **Ctrl+R** to search through past 
 | **Ctrl+Y** | Copy current value to clipboard |
 | **Ctrl+R** | Search query history |
 | **Ctrl+D** | Bookmark current path |
-| **Ctrl+\\** | Toggle split view (tree + JSON) |
+| **Ctrl+S** | Toggle split view (tree + JSON) |
 | **S** | Toggle schema view |
 | **/** | Switch to AI query mode |
 | **?** | Show help overlay |
@@ -265,7 +268,10 @@ api_key = "sk-..."
 ## CLI Options
 
 ```
-Usage: jdx [OPTIONS] [FILE]
+Usage: jdx [OPTIONS] [COMMAND] [FILE]
+
+Commands:
+  init  Run the interactive setup wizard to configure AI providers
 
 Arguments:
   [FILE]  File to read JSON from (reads stdin if omitted)

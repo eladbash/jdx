@@ -373,7 +373,12 @@ impl App {
                 self.mode = AppMode::Help;
             }
             Action::ToggleSplitView => {
-                self.split_view = !self.split_view;
+                if self.split_view {
+                    self.split_view = false;
+                } else {
+                    self.split_view = true;
+                    self.mode = AppMode::Tree;
+                }
             }
             Action::SearchHistory => {
                 // Simple: show last N history items as candidates
@@ -488,6 +493,10 @@ impl App {
                     }
                     Action::ScrollUp => {
                         self.tree_scroll = self.tree_scroll.saturating_sub(1);
+                    }
+                    Action::ToggleSplitView => {
+                        self.split_view = false;
+                        self.mode = AppMode::Query;
                     }
                     _ => {}
                 }
@@ -686,10 +695,15 @@ impl App {
     }
 
     fn handle_schema_event(&mut self, key: event::KeyEvent) {
+        // Esc goes back to query mode; Ctrl+C quits the app
+        if key.code == KeyCode::Esc {
+            self.mode = AppMode::Query;
+            return;
+        }
         let action = map_key_event(key);
         match action {
             Action::Quit => {
-                self.mode = AppMode::Query;
+                self.should_quit = true;
             }
             Action::ScrollDown => {
                 self.scroll = self.scroll.saturating_add(1);

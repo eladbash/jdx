@@ -28,6 +28,8 @@ crossterm = { version = "0.28", features = ["use-dev-tty"] }
 
 # CLI
 clap = { version = "4", features = ["derive"] }
+console = "0.15"
+dialoguer = "0.11"
 
 # JSON
 serde = { version = "1", features = ["derive"] }

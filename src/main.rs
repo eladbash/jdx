@@ -2,7 +2,7 @@ use std::io::{self, IsTerminal, Read};
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use crossterm::{
     event::{self, Event},
     execute,
@@ -64,6 +64,21 @@ fn reopen_tty_stdin() -> Result<()> {
 #[derive(Parser, Debug)]
 #[command(name = "jdx", version, about, long_about = None)]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+
+    #[command(flatten)]
+    viewer: ViewerArgs,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Run the interactive setup wizard to configure AI providers
+    Init,
+}
+
+#[derive(Parser, Debug)]
+struct ViewerArgs {
     /// File to read JSON from (reads stdin if omitted)
     #[arg(value_name = "FILE")]
     file: Option<String>,
@@ -100,11 +115,17 @@ struct Cli {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    if let Some(Command::Init) = cli.command {
+        return jdx::init::run_wizard();
+    }
+
+    let viewer = &cli.viewer;
+
     // Read input data
-    let content = read_input(&cli)?;
+    let content = read_input(viewer)?;
 
     // Determine input format
-    let input_format = match &cli.input_format {
+    let input_format = match &viewer.input_format {
         Some(fmt) => DataFormat::from_str_name(fmt)?,
         None => detect_format(&content),
     };
@@ -113,13 +134,13 @@ fn main() -> Result<()> {
     let data = parse_input(&content, input_format).context("Failed to parse input data")?;
 
     // Non-interactive mode: evaluate query and print result, then exit
-    if cli.non_interactive {
-        let query_str = cli.initial_query.as_deref().unwrap_or(".");
+    if viewer.non_interactive {
+        let query_str = viewer.initial_query.as_deref().unwrap_or(".");
         let segments = engine::query::parse(query_str)?;
         let result = engine::json::traverse(&data, &segments);
         match result.value {
             Some(val) => {
-                let output = format_output_value(&val, &cli)?;
+                let output = format_output_value(&val, viewer)?;
                 print!("{output}");
                 return Ok(());
             }
@@ -135,9 +156,9 @@ fn main() -> Result<()> {
     }
 
     // Interactive mode
-    let mut app = App::new(data, cli.query_output, cli.monochrome);
+    let mut app = App::new(data, viewer.query_output, viewer.monochrome);
 
-    if let Some(ref q) = cli.initial_query {
+    if let Some(ref q) = viewer.initial_query {
         app.query = q.clone();
         app.cursor = q.len();
     }
@@ -170,7 +191,7 @@ fn main() -> Result<()> {
                 result.value
             };
             match value {
-                Some(val) => format_output_value(&val, &cli)?,
+                Some(val) => format_output_value(&val, viewer)?,
                 None => String::new(),
             }
         };
@@ -207,8 +228,8 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
     Ok(())
 }
 
-fn read_input(cli: &Cli) -> Result<String> {
-    if let Some(ref path) = cli.file {
+fn read_input(viewer: &ViewerArgs) -> Result<String> {
+    if let Some(ref path) = viewer.file {
         std::fs::read_to_string(path).context(format!("Failed to read file: {path}"))
     } else if !io::stdin().is_terminal() {
         let mut buf = String::new();
@@ -225,8 +246,8 @@ fn read_input(cli: &Cli) -> Result<String> {
     }
 }
 
-fn format_output_value(value: &serde_json::Value, cli: &Cli) -> Result<String> {
-    let output_format = match &cli.output_format {
+fn format_output_value(value: &serde_json::Value, viewer: &ViewerArgs) -> Result<String> {
+    let output_format = match &viewer.output_format {
         Some(fmt) => DataFormat::from_str_name(fmt)?,
         None => DataFormat::Json,
     };

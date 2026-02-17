@@ -249,7 +249,7 @@ pub fn get_available_keys(value: &Value) -> Vec<String> {
             keys.sort();
             keys
         }
-        Value::Array(arr) => (0..arr.len()).map(|i| format!("[{}]", i)).collect(),
+        Value::Array(arr) => (0..arr.len()).map(|i| format!("[{i}]")).collect(),
         _ => vec![],
     }
 }
