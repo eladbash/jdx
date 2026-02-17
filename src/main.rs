@@ -221,8 +221,8 @@ fn main() -> Result<()> {
                 bail!("No NDJSON data received from stdin within the initial timeout.");
             }
 
-            let data =
-                parse_input(&initial_content, DataFormat::Ndjson).context("Failed to parse initial NDJSON data")?;
+            let data = parse_input(&initial_content, DataFormat::Ndjson)
+                .context("Failed to parse initial NDJSON data")?;
 
             // Now reopen /dev/tty so crossterm can read key events
             reopen_tty_stdin()?;
