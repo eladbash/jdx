@@ -54,10 +54,7 @@ impl Widget for HelpOverlayWidget {
 }
 
 fn get_bindings(mode: AppMode) -> Vec<(&'static str, &'static str)> {
-    let mut bindings = vec![
-        ("?", "Toggle this help"),
-        ("Ctrl+C", "Quit"),
-    ];
+    let mut bindings = vec![("?", "Toggle this help"), ("Ctrl+C", "Quit")];
 
     match mode {
         AppMode::Query => {
@@ -99,10 +96,7 @@ fn get_bindings(mode: AppMode) -> Vec<(&'static str, &'static str)> {
             ]);
         }
         AppMode::Schema => {
-            bindings.extend([
-                ("Esc", "Back to query mode"),
-                ("Ctrl+J/K", "Scroll"),
-            ]);
+            bindings.extend([("Esc", "Back to query mode"), ("Ctrl+J/K", "Scroll")]);
         }
         AppMode::Help => {}
     }

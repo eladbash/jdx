@@ -30,22 +30,10 @@ fn theme() -> ColorfulTheme {
 }
 
 fn banner() {
-    eprintln!(
-        "\n{}",
-        style("  ┌─────────────────────────────┐").dim()
-    );
-    eprintln!(
-        "{}",
-        style("  │  jdx init                   │").dim()
-    );
-    eprintln!(
-        "{}",
-        style("  │  interactive setup wizard    │").dim()
-    );
-    eprintln!(
-        "{}\n",
-        style("  └─────────────────────────────┘").dim()
-    );
+    eprintln!("\n{}", style("  ┌─────────────────────────────┐").dim());
+    eprintln!("{}", style("  │  jdx init                   │").dim());
+    eprintln!("{}", style("  │  interactive setup wizard    │").dim());
+    eprintln!("{}\n", style("  └─────────────────────────────┘").dim());
 }
 
 fn section(label: &str) {
@@ -108,9 +96,7 @@ pub fn run_wizard() -> Result<()> {
     config.ai = match provider {
         "ollama" => configure_ollama(&t, &config.ai)?,
         "openai" => configure_cloud(&t, "openai", "gpt-4o-mini", &config.ai)?,
-        "anthropic" => {
-            configure_cloud(&t, "anthropic", "claude-sonnet-4-5-20250929", &config.ai)?
-        }
+        "anthropic" => configure_cloud(&t, "anthropic", "claude-sonnet-4-5-20250929", &config.ai)?,
         _ => {
             info("ai disabled");
             AiConfig {
