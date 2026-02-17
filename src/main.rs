@@ -1,5 +1,6 @@
-use std::io::{self, IsTerminal, Read};
-use std::time::Duration;
+use std::io::{self, BufRead, IsTerminal, Read};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
@@ -9,6 +10,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::prelude::*;
+use serde_json::Value;
 
 use jdx::app::App;
 use jdx::engine;
@@ -55,6 +57,80 @@ fn reopen_tty_stdin() -> Result<()> {
         "Interactive mode with piped input is not supported on this platform.\n\
          Use --non-interactive or pass a file argument instead."
     );
+}
+
+/// Duplicate stdin (fd 0) before it gets replaced by `/dev/tty`, so we can
+/// keep reading the original pipe in a background thread.
+#[cfg(unix)]
+fn dup_stdin_fd() -> Result<std::fs::File> {
+    use std::os::unix::io::FromRawFd;
+
+    // SAFETY: dup() returns a new fd that is a copy of fd 0 (the pipe).
+    let new_fd = unsafe { libc::dup(libc::STDIN_FILENO) };
+    if new_fd == -1 {
+        bail!(
+            "Failed to dup stdin (errno: {})",
+            std::io::Error::last_os_error()
+        );
+    }
+    // SAFETY: new_fd is a valid, owned file descriptor from dup().
+    Ok(unsafe { std::fs::File::from_raw_fd(new_fd) })
+}
+
+/// Read NDJSON lines from `reader` until `deadline` or EOF, returning the
+/// collected content. This gives a quick initial batch without blocking forever
+/// on a streaming source.
+fn read_initial_ndjson(
+    reader: &mut io::BufReader<std::fs::File>,
+    deadline: Instant,
+) -> (String, bool) {
+    let mut content = String::new();
+    let mut line = String::new();
+    let mut hit_eof = false;
+    loop {
+        if Instant::now() >= deadline {
+            break;
+        }
+        line.clear();
+        match reader.read_line(&mut line) {
+            Ok(0) => {
+                hit_eof = true;
+                break;
+            }
+            Ok(_) => {
+                content.push_str(&line);
+            }
+            Err(_) => {
+                hit_eof = true;
+                break;
+            }
+        }
+    }
+    (content, hit_eof)
+}
+
+/// Background thread that reads remaining NDJSON lines from the pipe and sends
+/// parsed values over the channel. Exits on EOF or channel disconnect.
+fn stdin_reader_thread(reader: io::BufReader<std::fs::File>, tx: mpsc::Sender<Value>) {
+    for line in reader.lines() {
+        match line {
+            Ok(l) => {
+                let trimmed = l.trim().to_string();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                match serde_json::from_str::<Value>(&trimmed) {
+                    Ok(val) => {
+                        if tx.send(val).is_err() {
+                            return; // receiver dropped
+                        }
+                    }
+                    Err(_) => continue, // skip malformed lines
+                }
+            }
+            Err(_) => return, // pipe error / closed
+        }
+    }
 }
 
 /// jdx — JSON Data eXplorer
@@ -121,19 +197,91 @@ fn main() -> Result<()> {
 
     let viewer = &cli.viewer;
 
-    // Read input data
+    // Check if we should use the streaming NDJSON path:
+    // stdin is piped + format is explicitly NDJSON + not non-interactive
+    let is_stdin_piped = !io::stdin().is_terminal() && viewer.file.is_none();
+    let is_ndjson = matches!(
+        viewer.input_format.as_deref(),
+        Some("ndjson") | Some("jsonl")
+    );
+    let use_streaming = is_stdin_piped && is_ndjson && !viewer.non_interactive;
+
+    if use_streaming {
+        #[cfg(unix)]
+        {
+            // Dup the pipe fd BEFORE reopen_tty_stdin replaces fd 0
+            let pipe_file = dup_stdin_fd()?;
+            let mut reader = io::BufReader::new(pipe_file);
+
+            // Read initial batch with a short deadline
+            let deadline = Instant::now() + Duration::from_millis(500);
+            let (initial_content, hit_eof) = read_initial_ndjson(&mut reader, deadline);
+
+            if initial_content.trim().is_empty() {
+                bail!("No NDJSON data received from stdin within the initial timeout.");
+            }
+
+            let data =
+                parse_input(&initial_content, DataFormat::Ndjson).context("Failed to parse initial NDJSON data")?;
+
+            // Now reopen /dev/tty so crossterm can read key events
+            reopen_tty_stdin()?;
+
+            let mut app = App::new(data, viewer.query_output, viewer.monochrome);
+
+            // If the pipe hasn't ended, spawn background reader thread
+            if !hit_eof {
+                let (tx, rx) = mpsc::channel();
+                app.set_stdin_rx(rx);
+                std::thread::spawn(move || stdin_reader_thread(reader, tx));
+            }
+
+            if let Some(ref q) = viewer.initial_query {
+                app.query = q.clone();
+                app.cursor = q.len();
+            }
+
+            // Set up terminal
+            enable_raw_mode()?;
+            let mut stdout = io::stdout();
+            execute!(stdout, EnterAlternateScreen)?;
+            let backend = CrosstermBackend::new(stdout);
+            let mut terminal = Terminal::new(backend)?;
+
+            let result = run_app(&mut terminal, &mut app);
+
+            disable_raw_mode()?;
+            execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+            terminal.show_cursor()?;
+
+            result?;
+
+            if app.confirmed {
+                print_output(&app, viewer)?;
+            }
+
+            return Ok(());
+        }
+
+        #[cfg(not(unix))]
+        {
+            bail!(
+                "Streaming NDJSON from stdin is not supported on this platform.\n\
+                 Use --non-interactive or pass a file argument instead."
+            );
+        }
+    }
+
+    // Non-streaming path (original behavior)
     let content = read_input(viewer)?;
 
-    // Determine input format
     let input_format = match &viewer.input_format {
         Some(fmt) => DataFormat::from_str_name(fmt)?,
         None => detect_format(&content),
     };
 
-    // Parse input
     let data = parse_input(&content, input_format).context("Failed to parse input data")?;
 
-    // Non-interactive mode: evaluate query and print result, then exit
     if viewer.non_interactive {
         let query_str = viewer.initial_query.as_deref().unwrap_or(".");
         let segments = engine::query::parse(query_str)?;
@@ -150,12 +298,10 @@ fn main() -> Result<()> {
         }
     }
 
-    // If stdin was piped, reopen /dev/tty so crossterm can read key events
     if !io::stdin().is_terminal() {
         reopen_tty_stdin()?;
     }
 
-    // Interactive mode
     let mut app = App::new(data, viewer.query_output, viewer.monochrome);
 
     if let Some(ref q) = viewer.initial_query {
@@ -163,41 +309,22 @@ fn main() -> Result<()> {
         app.cursor = q.len();
     }
 
-    // Set up terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Main event loop
     let result = run_app(&mut terminal, &mut app);
 
-    // Restore terminal
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
     result?;
 
-    // Output result
     if app.confirmed {
-        let output = if app.query_output_mode {
-            app.query.clone()
-        } else {
-            let value = {
-                let segments = engine::query::parse(&app.query).unwrap_or_default();
-                let result = engine::json::traverse(&app.data, &segments);
-                result.value
-            };
-            match value {
-                Some(val) => format_output_value(&val, viewer)?,
-                None => String::new(),
-            }
-        };
-        if !output.is_empty() {
-            println!("{output}");
-        }
+        print_output(&app, viewer)?;
     }
 
     Ok(())
@@ -213,6 +340,9 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
 
         // Check for AI results from background thread
         app.poll_ai_result();
+
+        // Check for new streaming NDJSON lines
+        app.poll_stdin();
 
         // Poll for events with a small timeout for responsive rendering
         if event::poll(Duration::from_millis(50))? {
@@ -244,6 +374,26 @@ fn read_input(viewer: &ViewerArgs) -> Result<String> {
              \n  jdx data.json\n"
         );
     }
+}
+
+fn print_output(app: &App, viewer: &ViewerArgs) -> Result<()> {
+    let output = if app.query_output_mode {
+        app.query.clone()
+    } else {
+        let value = {
+            let segments = engine::query::parse(&app.query).unwrap_or_default();
+            let result = engine::json::traverse(&app.data, &segments);
+            result.value
+        };
+        match value {
+            Some(val) => format_output_value(&val, viewer)?,
+            None => String::new(),
+        }
+    };
+    if !output.is_empty() {
+        println!("{output}");
+    }
+    Ok(())
 }
 
 fn format_output_value(value: &serde_json::Value, viewer: &ViewerArgs) -> Result<String> {

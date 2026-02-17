@@ -88,6 +88,10 @@ pub struct App {
     pub monochrome: bool,
     /// Receiver for async AI results
     ai_result_rx: Option<mpsc::Receiver<Result<AiResponse, String>>>,
+    /// Receiver for streaming NDJSON lines from stdin
+    stdin_rx: Option<mpsc::Receiver<Value>>,
+    /// Whether stdin is still streaming data
+    pub streaming: bool,
 }
 
 impl App {
@@ -125,6 +129,8 @@ impl App {
             split_view: false,
             monochrome,
             ai_result_rx: None,
+            stdin_rx: None,
+            streaming: false,
         }
     }
 
@@ -153,6 +159,39 @@ impl App {
                     self.ai_error = Some("AI request was interrupted".into());
                     self.ai_result_rx = None;
                 }
+            }
+        }
+    }
+
+    /// Set the receiver for streaming NDJSON lines.
+    pub fn set_stdin_rx(&mut self, rx: mpsc::Receiver<Value>) {
+        self.stdin_rx = Some(rx);
+        self.streaming = true;
+    }
+
+    /// Poll for new NDJSON lines from the background stdin reader (non-blocking).
+    pub fn poll_stdin(&mut self) {
+        if let Some(rx) = &self.stdin_rx {
+            let mut got_data = false;
+            loop {
+                match rx.try_recv() {
+                    Ok(val) => {
+                        if let Value::Array(ref mut arr) = self.data {
+                            arr.push(val);
+                        }
+                        got_data = true;
+                    }
+                    Err(mpsc::TryRecvError::Empty) => break,
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        self.streaming = false;
+                        self.stdin_rx = None;
+                        break;
+                    }
+                }
+            }
+            if got_data {
+                // Invalidate cached schema so it gets regenerated with new data
+                self.schema_text = None;
             }
         }
     }
@@ -212,7 +251,7 @@ impl App {
 
     /// Get stats string for the status bar.
     fn stats(&self) -> String {
-        match self.current_value() {
+        let base = match self.current_value() {
             Some(Value::Object(map)) => format!("{} keys", map.len()),
             Some(Value::Array(arr)) => format!("{} items", arr.len()),
             Some(Value::String(s)) => format!("{} chars", s.len()),
@@ -220,6 +259,11 @@ impl App {
             Some(Value::Bool(b)) => b.to_string(),
             Some(Value::Null) => "null".into(),
             None => "no match".into(),
+        };
+        if self.streaming {
+            format!("{base} (streaming...)")
+        } else {
+            base
         }
     }
 

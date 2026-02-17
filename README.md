@@ -123,7 +123,7 @@ Chain transforms after your query using `:` commands:
 | `:flatten` | Flatten nested arrays | `.tags :flatten` |
 | `:pick` | Select fields | `.users :pick name,email` |
 | `:omit` | Exclude fields | `.users :omit metadata` |
-| `:sort` | Sort by field | `.users :sort age` |
+| `:sort` | Sort by field (asc/desc) | `.users :sort age desc` |
 | `:uniq` | Deduplicate | `.tags :uniq` |
 | `:group_by` | Group by field | `.users :group_by role` |
 | `:filter` | Filter by predicate | `.users :filter age > 30` |
@@ -136,7 +136,7 @@ The `:filter` transform is equivalent to the bracket predicate syntax but works 
 
 ```
 .store.books :filter price < 10 :pick title,price
-.users :pick name,age :filter age > 25 :sort age
+.users :pick name,age :filter age > 25 :sort age desc
 .store.books :sum price                    # total of all book prices
 .store.books :filter price < 15 :avg price # average of cheap books
 .scores :min                               # minimum of a numeric array
@@ -164,8 +164,11 @@ jdx data.json --output yaml            # Output as YAML
 
 ### Streaming NDJSON
 
+Pipe a streaming source and jdx launches immediately with the initial data, then updates live as new lines arrive. The status bar shows "(streaming...)" while data is still flowing.
+
 ```bash
 tail -f logs.jsonl | jdx --input ndjson
+docker logs -f myapp | jdx --input ndjson
 ```
 
 ### Clipboard Integration

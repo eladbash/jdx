@@ -202,22 +202,32 @@ fn transform_omit(value: &Value, args: &str) -> Result<Value> {
     }
 }
 
-/// Sort an array of objects by a field.
-/// Usage: `:sort name` or `:sort age`
+/// Sort an array of objects by a field, optionally in descending order.
+/// Usage: `:sort name`, `:sort age desc`, `:sort desc`
 fn transform_sort(value: &Value, args: &str) -> Result<Value> {
     match value {
         Value::Array(arr) => {
             let mut sorted = arr.clone();
-            if args.is_empty() {
-                // Sort primitives by their string representation
-                sorted.sort_by_key(|a| a.to_string());
-            } else {
-                let field = args.trim();
-                sorted.sort_by(|a, b| {
-                    let a_val = a.get(field).unwrap_or(&Value::Null);
-                    let b_val = b.get(field).unwrap_or(&Value::Null);
+            let tokens: Vec<&str> = args.split_whitespace().collect();
+            let (field, descending) = match tokens.as_slice() {
+                [] => (None, false),
+                ["desc"] => (None, true),
+                ["asc"] => (None, false),
+                [field] => (Some(*field), false),
+                [field, "desc"] => (Some(*field), true),
+                [field, "asc"] => (Some(*field), false),
+                _ => bail!(":sort usage: :sort [field] [asc|desc]"),
+            };
+            match field {
+                None => sorted.sort_by_key(|a| a.to_string()),
+                Some(f) => sorted.sort_by(|a, b| {
+                    let a_val = a.get(f).unwrap_or(&Value::Null);
+                    let b_val = b.get(f).unwrap_or(&Value::Null);
                     compare_values(a_val, b_val)
-                });
+                }),
+            }
+            if descending {
+                sorted.reverse();
             }
             Ok(Value::Array(sorted))
         }
@@ -464,6 +474,41 @@ mod tests {
         let data = json!([3, 1, 2]);
         let result = apply_transform(&data, ":sort").unwrap();
         assert_eq!(result, json!([1, 2, 3]));
+    }
+
+    #[test]
+    fn test_sort_by_field_desc() {
+        let data = json!([
+            {"name": "Charlie", "age": 35},
+            {"name": "Alice", "age": 25},
+            {"name": "Bob", "age": 30}
+        ]);
+        let result = apply_transform(&data, ":sort name desc").unwrap();
+        let arr = result.as_array().unwrap();
+        assert_eq!(arr[0]["name"], "Charlie");
+        assert_eq!(arr[1]["name"], "Bob");
+        assert_eq!(arr[2]["name"], "Alice");
+    }
+
+    #[test]
+    fn test_sort_primitives_desc() {
+        let data = json!([3, 1, 2]);
+        let result = apply_transform(&data, ":sort desc").unwrap();
+        assert_eq!(result, json!([3, 2, 1]));
+    }
+
+    #[test]
+    fn test_sort_by_field_asc_explicit() {
+        let data = json!([
+            {"name": "Charlie"},
+            {"name": "Alice"},
+            {"name": "Bob"}
+        ]);
+        let result = apply_transform(&data, ":sort name asc").unwrap();
+        let arr = result.as_array().unwrap();
+        assert_eq!(arr[0]["name"], "Alice");
+        assert_eq!(arr[1]["name"], "Bob");
+        assert_eq!(arr[2]["name"], "Charlie");
     }
 
     #[test]
