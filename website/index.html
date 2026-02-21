@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>jdx — Interactive JSON Data Explorer</title>
+  <meta name="description" content="An interactive, AI-augmented terminal tool for exploring JSON data. Think jq meets a code editor — with fuzzy search, tree navigation, schema inspection, and natural language querying." />
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="bg-[#0a0a0a] text-[#e4e4e7]">
+
+  <!-- ── Navbar ──────────────────────────────────── -->
+  <nav id="navbar" class="navbar">
+    <div class="max-w-6xl mx-auto px-6 flex items-center justify-between">
+      <a href="#" class="font-bold text-xl" style="font-family:'JetBrains Mono',monospace; color:var(--cyan)">jdx</a>
+      <div class="nav-links flex items-center gap-8">
+        <a href="#features" class="text-sm text-zinc-400 hover:text-white transition-colors">Features</a>
+        <a href="#usage" class="text-sm text-zinc-400 hover:text-white transition-colors">Usage</a>
+        <a href="#install" class="text-sm text-zinc-400 hover:text-white transition-colors">Install</a>
+        <a href="https://github.com/eladbash/jdx" target="_blank" rel="noopener" class="text-sm text-zinc-400 hover:text-white transition-colors flex items-center gap-1">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          GitHub
+        </a>
+      </div>
+      <button id="hamburger" class="hamburger" aria-label="Open menu">&#9776;</button>
+    </div>
+  </nav>
+
+  <!-- Mobile menu -->
+  <div id="mobile-menu" class="mobile-menu">
+    <button id="mobile-close" class="mobile-close" aria-label="Close menu">&times;</button>
+    <a href="#features">Features</a>
+    <a href="#usage">Usage</a>
+    <a href="#install">Install</a>
+    <a href="https://github.com/eladbash/jdx" target="_blank" rel="noopener">GitHub</a>
+  </div>
+
+  <!-- ── Hero ────────────────────────────────────── -->
+  <section class="hero-bg pt-40 pb-24 px-6">
+    <div class="max-w-4xl mx-auto text-center">
+      <h1 class="text-5xl md:text-7xl font-bold mb-6" style="font-family:'JetBrains Mono',monospace; color:var(--cyan)">jdx</h1>
+      <p class="text-xl md:text-2xl text-zinc-300 mb-3 max-w-2xl mx-auto">Interactive JSON Data Explorer</p>
+      <p class="text-base md:text-lg text-zinc-500 mb-10 max-w-xl mx-auto">Think <code class="text-zinc-300 bg-zinc-800/50 px-1.5 py-0.5 rounded text-sm" style="font-family:'JetBrains Mono',monospace">jq</code> meets a code editor &mdash; with AI.</p>
+
+      <!-- Install command -->
+      <div class="flex items-center justify-center gap-3 mb-6">
+        <code id="install-cmd" class="bg-zinc-900 border border-zinc-800 rounded-lg px-5 py-3 text-sm md:text-base" style="font-family:'JetBrains Mono',monospace">
+          <span class="syn-prompt">$</span> <span class="syn-cmd">cargo</span> <span class="syn-flag">install</span> jdx
+        </code>
+        <button id="install-copy-btn" class="copy-btn" data-copy="cargo install jdx" aria-label="Copy install command">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        </button>
+      </div>
+
+      <!-- Install method pills -->
+      <div class="flex items-center justify-center gap-3 flex-wrap mb-14">
+        <button class="pill install-pill active" data-cmd="cargo install jdx" data-html='<span class="syn-prompt">$</span> <span class="syn-cmd">cargo</span> <span class="syn-flag">install</span> jdx'>Cargo</button>
+        <button class="pill install-pill" data-cmd="brew install eladbash/jdx/jdx" data-html='<span class="syn-prompt">$</span> <span class="syn-cmd">brew</span> <span class="syn-flag">install</span> eladbash/jdx/jdx'>Homebrew</button>
+        <a href="https://github.com/eladbash/jdx/releases" target="_blank" rel="noopener" class="pill" style="text-decoration:none">Pre-built Binaries</a>
+      </div>
+
+      <!-- Demo GIF in terminal frame -->
+      <div class="terminal-frame max-w-3xl mx-auto fade-in">
+        <div class="terminal-bar">
+          <div class="terminal-dot"></div>
+          <div class="terminal-dot"></div>
+          <div class="terminal-dot"></div>
+          <span class="terminal-title">jdx</span>
+        </div>
+        <div class="terminal-body" style="padding:0">
+          <img src="assets/demo.gif" alt="jdx demo — interactive JSON exploration in the terminal" loading="lazy" />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Features ────────────────────────────────── -->
+  <section id="features" class="px-6">
+    <div class="max-w-6xl mx-auto">
+      <h2 class="text-3xl md:text-4xl font-bold text-center mb-4" style="font-family:'JetBrains Mono',monospace">Features</h2>
+      <p class="text-zinc-500 text-center mb-14 max-w-lg mx-auto">Everything you need to explore, query, and transform structured data in the terminal.</p>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <!-- Card 1 -->
+        <div class="feature-card fade-in">
+          <div class="feature-icon cyan">.</div>
+          <h3 class="font-semibold text-lg mb-2">Query Language</h3>
+          <p class="text-sm text-zinc-400 leading-relaxed">Dot-notation paths like <code class="text-cyan-400 text-xs" style="font-family:'JetBrains Mono',monospace">.users[0].name</code> with filter predicates. Every keystroke updates the view instantly.</p>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="feature-card fade-in">
+          <div class="feature-icon violet">:</div>
+          <h3 class="font-semibold text-lg mb-2">Inline Transforms</h3>
+          <p class="text-sm text-zinc-400 leading-relaxed">Chain <code class="text-violet-400 text-xs" style="font-family:'JetBrains Mono',monospace">:pick</code>, <code class="text-violet-400 text-xs" style="font-family:'JetBrains Mono',monospace">:sort</code>, <code class="text-violet-400 text-xs" style="font-family:'JetBrains Mono',monospace">:filter</code>, <code class="text-violet-400 text-xs" style="font-family:'JetBrains Mono',monospace">:group_by</code>, and 10 more transforms directly in your query.</p>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="feature-card fade-in">
+          <div class="feature-icon cyan">&#8677;</div>
+          <h3 class="font-semibold text-lg mb-2">Fuzzy Completion</h3>
+          <p class="text-sm text-zinc-400 leading-relaxed">Press Tab for fuzzy-matched key suggestions at current depth. Ghost text shows the top candidate inline, like fish shell.</p>
+        </div>
+
+        <!-- Card 4 -->
+        <div class="feature-card fade-in">
+          <div class="feature-icon violet">&#9698;</div>
+          <h3 class="font-semibold text-lg mb-2">Tree Navigation</h3>
+          <p class="text-sm text-zinc-400 leading-relaxed">Split panel with a collapsible tree view. Expand, collapse, and navigate nodes with arrow keys. Syncs with the query input.</p>
+        </div>
+
+        <!-- Card 5 -->
+        <div class="feature-card fade-in">
+          <div class="feature-icon cyan">{}</div>
+          <h3 class="font-semibold text-lg mb-2">Schema Inspector</h3>
+          <p class="text-sm text-zinc-400 leading-relaxed">Infers the shape of your data &mdash; types, optional fields, value ranges, and array lengths. Great for unfamiliar APIs.</p>
+        </div>
+
+        <!-- Card 6 -->
+        <div class="feature-card fade-in">
+          <div class="feature-icon violet">&#9681;</div>
+          <h3 class="font-semibold text-lg mb-2">AI Queries</h3>
+          <p class="text-sm text-zinc-400 leading-relaxed">Ask questions in plain English. The AI sees your data and answers directly. Supports OpenAI, Anthropic, and local Ollama models.</p>
+        </div>
+
+        <!-- Card 7 -->
+        <div class="feature-card fade-in">
+          <div class="feature-icon cyan">&#8644;</div>
+          <h3 class="font-semibold text-lg mb-2">Multi-Format</h3>
+          <p class="text-sm text-zinc-400 leading-relaxed">Auto-detects JSON, YAML, TOML, CSV, and NDJSON input. Output in any format with a flag.</p>
+        </div>
+
+        <!-- Card 8 -->
+        <div class="feature-card fade-in">
+          <div class="feature-icon violet">&#8594;</div>
+          <h3 class="font-semibold text-lg mb-2">Streaming NDJSON</h3>
+          <p class="text-sm text-zinc-400 leading-relaxed">Pipe a streaming source and explore immediately. Updates live as new lines arrive with a streaming indicator.</p>
+        </div>
+
+        <!-- Card 9 -->
+        <div class="feature-card fade-in">
+          <div class="feature-icon cyan">&#9112;</div>
+          <h3 class="font-semibold text-lg mb-2">Clipboard &amp; History</h3>
+          <p class="text-sm text-zinc-400 leading-relaxed">Copy values with Ctrl+Y, bookmark paths with Ctrl+D, and search through saved query history with Ctrl+R.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Usage Examples ──────────────────────────── -->
+  <section id="usage" class="px-6">
+    <div class="max-w-4xl mx-auto">
+      <h2 class="text-3xl md:text-4xl font-bold text-center mb-4" style="font-family:'JetBrains Mono',monospace">Usage</h2>
+      <p class="text-zinc-500 text-center mb-14 max-w-lg mx-auto">A few examples of what jdx can do.</p>
+
+      <div class="space-y-8">
+        <!-- Example 1: Basic Exploration -->
+        <div class="terminal-frame fade-in">
+          <div class="terminal-bar">
+            <div class="terminal-dot"></div>
+            <div class="terminal-dot"></div>
+            <div class="terminal-dot"></div>
+            <span class="terminal-title">Basic Exploration</span>
+          </div>
+          <div class="terminal-body">
+<pre><span class="syn-cmt"># Pipe JSON from any source</span>
+<span class="syn-prompt">$</span> <span class="syn-cmd">curl</span> <span class="syn-flag">-s</span> https://api.github.com/repos/rust-lang/rust <span class="syn-pipe">|</span> <span class="syn-cmd">jdx</span>
+
+<span class="syn-cmt"># Open a file directly</span>
+<span class="syn-prompt">$</span> <span class="syn-cmd">jdx</span> data.json
+
+<span class="syn-cmt"># YAML, TOML, CSV are auto-detected</span>
+<span class="syn-prompt">$</span> <span class="syn-cmd">cat</span> config.yaml <span class="syn-pipe">|</span> <span class="syn-cmd">jdx</span></pre>
+          </div>
+        </div>
+
+        <!-- Example 2: Query Language -->
+        <div class="terminal-frame fade-in">
+          <div class="terminal-bar">
+            <div class="terminal-dot"></div>
+            <div class="terminal-dot"></div>
+            <div class="terminal-dot"></div>
+            <span class="terminal-title">Query Language + Transforms</span>
+          </div>
+          <div class="terminal-body">
+<pre><span class="syn-cmt"># Dot-notation with filter predicates</span>
+<span class="syn-key">.store.books</span>[<span class="syn-key">price</span> <span class="syn-op">&lt;</span> <span class="syn-num">10</span>]<span class="syn-key">.title</span>
+
+<span class="syn-cmt"># Chain transforms</span>
+<span class="syn-key">.users</span> <span class="syn-transform">:pick</span> name,age <span class="syn-transform">:filter</span> <span class="syn-key">age</span> <span class="syn-op">&gt;</span> <span class="syn-num">25</span> <span class="syn-transform">:sort</span> age desc
+
+<span class="syn-cmt"># Aggregations</span>
+<span class="syn-key">.store.books</span> <span class="syn-transform">:sum</span> price
+<span class="syn-key">.users</span>[<span class="syn-key">role</span> <span class="syn-op">==</span> <span class="syn-str">"admin"</span>] <span class="syn-transform">:count</span></pre>
+          </div>
+        </div>
+
+        <!-- Example 3: AI Queries -->
+        <div class="terminal-frame fade-in">
+          <div class="terminal-bar">
+            <div class="terminal-dot"></div>
+            <div class="terminal-dot"></div>
+            <div class="terminal-dot"></div>
+            <span class="terminal-title">AI Queries (press /)</span>
+          </div>
+          <div class="terminal-body">
+<pre><span class="syn-cmt"># Press / to enter AI mode, then ask in plain English</span>
+
+<span class="syn-str">"what is the total price of all books?"</span>
+<span class="syn-str">"which books cost less than $10?"</span>
+<span class="syn-str">"who are the admin users?"</span>
+
+<span class="syn-cmt"># The AI answers directly and suggests a jdx query</span>
+<span class="syn-cmt"># Press Enter to apply the suggested query</span></pre>
+          </div>
+        </div>
+
+        <!-- Example 4: Multi-Format + Streaming -->
+        <div class="terminal-frame fade-in">
+          <div class="terminal-bar">
+            <div class="terminal-dot"></div>
+            <div class="terminal-dot"></div>
+            <div class="terminal-dot"></div>
+            <span class="terminal-title">Multi-Format &amp; Streaming</span>
+          </div>
+          <div class="terminal-body">
+<pre><span class="syn-cmt"># Convert between formats</span>
+<span class="syn-prompt">$</span> <span class="syn-cmd">jdx</span> data.json <span class="syn-flag">--output</span> yaml
+<span class="syn-prompt">$</span> <span class="syn-cmd">cat</span> data.csv <span class="syn-pipe">|</span> <span class="syn-cmd">jdx</span> <span class="syn-flag">--input</span> csv
+
+<span class="syn-cmt"># Stream NDJSON in real time</span>
+<span class="syn-prompt">$</span> <span class="syn-cmd">tail</span> <span class="syn-flag">-f</span> logs.jsonl <span class="syn-pipe">|</span> <span class="syn-cmd">jdx</span> <span class="syn-flag">--input</span> ndjson
+<span class="syn-prompt">$</span> <span class="syn-cmd">docker</span> logs <span class="syn-flag">-f</span> myapp <span class="syn-pipe">|</span> <span class="syn-cmd">jdx</span> <span class="syn-flag">--input</span> ndjson</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Comparison Table ────────────────────────── -->
+  <section id="compare" class="px-6">
+    <div class="max-w-4xl mx-auto">
+      <h2 class="text-3xl md:text-4xl font-bold text-center mb-4" style="font-family:'JetBrains Mono',monospace">Comparison</h2>
+      <p class="text-zinc-500 text-center mb-14 max-w-lg mx-auto">How jdx stacks up against other JSON tools.</p>
+
+      <div class="terminal-frame fade-in overflow-x-auto">
+        <table class="comparison-table">
+          <thead>
+            <tr>
+              <th class="text-left">Feature</th>
+              <th class="highlight">jdx</th>
+              <th>jq</th>
+              <th>jid</th>
+              <th>fx</th>
+              <th>jless</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Interactive TUI</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="check">&#10003;</span></td>
+            </tr>
+            <tr>
+              <td>Fuzzy completion</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="text-zinc-500 text-xs">Prefix</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+            </tr>
+            <tr>
+              <td>Tree navigation</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="check">&#10003;</span></td>
+            </tr>
+            <tr>
+              <td>Schema inspector</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+            </tr>
+            <tr>
+              <td>AI queries</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+            </tr>
+            <tr>
+              <td>Inline transforms</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+            </tr>
+            <tr>
+              <td>Filter predicates</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+            </tr>
+            <tr>
+              <td>Multi-format input</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+            </tr>
+            <tr>
+              <td>Streaming NDJSON</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+            </tr>
+            <tr>
+              <td>Clipboard copy</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+            </tr>
+            <tr>
+              <td>Query history</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+              <td><span class="dash">&mdash;</span></td>
+            </tr>
+            <tr>
+              <td>Written in</td>
+              <td class="highlight" style="color:var(--cyan)">Rust</td>
+              <td>C</td>
+              <td>Go</td>
+              <td>Go</td>
+              <td>Rust</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Installation ────────────────────────────── -->
+  <section id="install" class="px-6">
+    <div class="max-w-4xl mx-auto">
+      <h2 class="text-3xl md:text-4xl font-bold text-center mb-4" style="font-family:'JetBrains Mono',monospace">Install</h2>
+      <p class="text-zinc-500 text-center mb-14 max-w-lg mx-auto">Get started in seconds. Single binary, no dependencies.</p>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <!-- Cargo -->
+        <div class="install-card fade-in">
+          <h3 class="font-semibold text-lg mb-1">Cargo</h3>
+          <p class="text-sm text-zinc-500 mb-5">From crates.io</p>
+          <div class="flex items-center gap-2">
+            <code class="flex-1 bg-zinc-900 rounded-lg px-4 py-2.5 text-sm" style="font-family:'JetBrains Mono',monospace">cargo install jdx</code>
+            <button class="copy-btn" data-copy="cargo install jdx" aria-label="Copy cargo install command">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Homebrew -->
+        <div class="install-card fade-in">
+          <h3 class="font-semibold text-lg mb-1">Homebrew</h3>
+          <p class="text-sm text-zinc-500 mb-5">macOS / Linux</p>
+          <div class="flex items-center gap-2">
+            <code class="flex-1 bg-zinc-900 rounded-lg px-4 py-2.5 text-sm overflow-x-auto" style="font-family:'JetBrains Mono',monospace">brew install eladbash/jdx/jdx</code>
+            <button class="copy-btn" data-copy="brew install eladbash/jdx/jdx" aria-label="Copy brew install command">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Pre-built -->
+        <div class="install-card fade-in">
+          <h3 class="font-semibold text-lg mb-1">Pre-built Binaries</h3>
+          <p class="text-sm text-zinc-500 mb-5">Linux, macOS, Windows</p>
+          <a href="https://github.com/eladbash/jdx/releases" target="_blank" rel="noopener" class="inline-flex items-center gap-2 bg-zinc-900 rounded-lg px-4 py-2.5 text-sm hover:bg-zinc-800 transition-colors" style="font-family:'JetBrains Mono',monospace; color:var(--cyan); text-decoration:none;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            GitHub Releases
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Footer ──────────────────────────────────── -->
+  <footer class="border-t border-zinc-800/50 py-12 px-6">
+    <div class="max-w-4xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+      <div class="flex items-center gap-2">
+        <span class="font-bold" style="font-family:'JetBrains Mono',monospace; color:var(--cyan)">jdx</span>
+        <span class="text-zinc-600 text-sm">&mdash; Built with Rust.</span>
+      </div>
+      <div class="flex items-center gap-6 text-sm text-zinc-500">
+        <a href="https://github.com/eladbash/jdx" target="_blank" rel="noopener" class="hover:text-zinc-300 transition-colors">GitHub</a>
+        <a href="https://crates.io/crates/jdx" target="_blank" rel="noopener" class="hover:text-zinc-300 transition-colors">Crates.io</a>
+        <a href="https://github.com/eladbash/jdx/blob/main/LICENSE" target="_blank" rel="noopener" class="hover:text-zinc-300 transition-colors">MIT License</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
