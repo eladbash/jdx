@@ -237,8 +237,8 @@ fn main() -> Result<()> {
             }
 
             if let Some(ref q) = viewer.initial_query {
-                app.query = q.clone();
-                app.cursor = q.len();
+                app.query.text = q.clone();
+                app.query.cursor = q.len();
             }
 
             // Set up terminal
@@ -305,8 +305,8 @@ fn main() -> Result<()> {
     let mut app = App::new(data, viewer.query_output, viewer.monochrome);
 
     if let Some(ref q) = viewer.initial_query {
-        app.query = q.clone();
-        app.cursor = q.len();
+        app.query.text = q.clone();
+        app.query.cursor = q.len();
     }
 
     enable_raw_mode()?;
@@ -378,12 +378,17 @@ fn read_input(viewer: &ViewerArgs) -> Result<String> {
 
 fn print_output(app: &App, viewer: &ViewerArgs) -> Result<()> {
     let output = if app.query_output_mode {
-        app.query.clone()
+        app.query.text.clone()
     } else {
-        let value = {
-            let segments = engine::query::parse(&app.query).unwrap_or_default();
-            let result = engine::json::traverse(&app.data, &segments);
-            result.value
+        let value = match engine::query::parse(&app.query.text) {
+            Ok(segments) => {
+                let result = engine::json::traverse(&app.data, &segments);
+                result.value
+            }
+            Err(e) => {
+                eprintln!("Query parse error: {e}");
+                None
+            }
         };
         match value {
             Some(val) => format_output_value(&val, viewer)?,

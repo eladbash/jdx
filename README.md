@@ -103,6 +103,14 @@ Supported operators: `==`, `!=`, `<`, `>`, `<=`, `>=`
 
 Values can be numbers (`10`, `3.5`), quoted strings (`"admin"`), booleans (`true`/`false`), or `null`.
 
+Compound filters with `&&` (AND) and `||` (OR):
+
+```
+.items[price > 5 && price < 20]      # price in range
+.users[role == "admin" || role == "mod"]  # multiple roles
+.items[featured == true || price < 10 && stock > 0]  # mixed (|| has lower precedence)
+```
+
 Filters can be combined with path navigation and transforms:
 
 ```
@@ -131,8 +139,20 @@ Chain transforms after your query using `:` commands:
 | `:avg` | Average numeric values | `.scores :avg value` |
 | `:min` | Minimum value | `.products :min price` |
 | `:max` | Maximum value | `.products :max price` |
+| `:reverse` | Reverse array or string | `.users :reverse` |
+| `:upper` | Uppercase strings | `.names :upper` |
+| `:lower` | Lowercase strings | `.names :lower` |
+| `:split` | Split string by delimiter | `.date :split -` |
+| `:join` | Join array with separator | `.tags :join ,` |
 
-The `:filter` transform is equivalent to the bracket predicate syntax but works as a chained transform. Aggregate commands (`:sum`, `:avg`, `:min`, `:max`) work on arrays of numbers or on a specific field from objects:
+The `:filter` transform supports compound expressions with `&&` and `||`:
+
+```
+.users :filter age > 20 && age < 40
+.users :filter role == "admin" || role == "moderator"
+```
+
+Aggregate commands (`:sum`, `:avg`, `:min`, `:max`) work on arrays of numbers or on a specific field from objects:
 
 ```
 .store.books :filter price < 10 :pick title,price
@@ -140,6 +160,13 @@ The `:filter` transform is equivalent to the bracket predicate syntax but works 
 .store.books :sum price                    # total of all book prices
 .store.books :filter price < 15 :avg price # average of cheap books
 .scores :min                               # minimum of a numeric array
+```
+
+String transforms can be chained together:
+
+```
+.date :split - :reverse :join /            # "2024-01-15" → "15/01/2024"
+.name :upper :split , :reverse :join ,     # chain multiple string ops
 ```
 
 ### Natural Language AI Querying

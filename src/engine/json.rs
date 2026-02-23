@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use super::query::{CompareOp, FilterValue, PathSegment, Predicate};
+use super::query::{CompareOp, FilterExpr, FilterValue, PathSegment, Predicate};
 
 /// Result of traversing JSON with a parsed query.
 #[derive(Debug, Clone)]
@@ -131,11 +131,11 @@ pub fn traverse(root: &Value, segments: &[PathSegment]) -> TraversalResult {
                     }
                 }
             }
-            PathSegment::Filter(pred) => {
+            PathSegment::Filter(expr) => {
                 if let Some(arr) = current.as_array() {
                     let filtered: Vec<Value> = arr
                         .iter()
-                        .filter(|item| eval_predicate(item, pred))
+                        .filter(|item| eval_filter_expr(item, expr))
                         .cloned()
                         .collect();
                     // Continue traversal with remaining segments
@@ -170,6 +170,19 @@ pub fn traverse(root: &Value, segments: &[PathSegment]) -> TraversalResult {
         value: Some(current.clone()),
         parent: parent.cloned(),
         depth,
+    }
+}
+
+/// Evaluate a compound filter expression (AND/OR/Single) against a JSON value.
+pub fn eval_filter_expr(value: &Value, expr: &FilterExpr) -> bool {
+    match expr {
+        FilterExpr::Single(pred) => eval_predicate(value, pred),
+        FilterExpr::And(left, right) => {
+            eval_filter_expr(value, left) && eval_filter_expr(value, right)
+        }
+        FilterExpr::Or(left, right) => {
+            eval_filter_expr(value, left) || eval_filter_expr(value, right)
+        }
     }
 }
 
@@ -406,11 +419,11 @@ mod tests {
         });
         let segments = vec![
             PathSegment::Key("books".into()),
-            PathSegment::Filter(Predicate {
+            PathSegment::Filter(FilterExpr::Single(Predicate {
                 field: "price".into(),
                 op: CompareOp::Lt,
                 value: FilterValue::Number(10.0),
-            }),
+            })),
         ];
         let result = traverse(&data, &segments);
         let arr = result.value.unwrap();
@@ -431,11 +444,11 @@ mod tests {
         });
         let segments = vec![
             PathSegment::Key("users".into()),
-            PathSegment::Filter(Predicate {
+            PathSegment::Filter(FilterExpr::Single(Predicate {
                 field: "role".into(),
                 op: CompareOp::Eq,
                 value: FilterValue::String("admin".into()),
-            }),
+            })),
         ];
         let result = traverse(&data, &segments);
         let arr = result.value.unwrap();
@@ -452,11 +465,11 @@ mod tests {
             {"name": "Bob", "active": false},
             {"name": "Carol", "active": true}
         ]);
-        let segments = vec![PathSegment::Filter(Predicate {
+        let segments = vec![PathSegment::Filter(FilterExpr::Single(Predicate {
             field: "active".into(),
             op: CompareOp::Eq,
             value: FilterValue::Bool(true),
-        })];
+        }))];
         let result = traverse(&data, &segments);
         let arr = result.value.unwrap();
         let arr = arr.as_array().unwrap();
@@ -476,11 +489,11 @@ mod tests {
         // But let's test that filter + further key access works as traversal stops:
         let segments = vec![
             PathSegment::Key("items".into()),
-            PathSegment::Filter(Predicate {
+            PathSegment::Filter(FilterExpr::Single(Predicate {
                 field: "price".into(),
                 op: CompareOp::Lt,
                 value: FilterValue::Number(10.0),
-            }),
+            })),
         ];
         let result = traverse(&data, &segments);
         let arr = result.value.unwrap();
@@ -495,11 +508,11 @@ mod tests {
             {"val": 1},
             {"val": 2}
         ]);
-        let segments = vec![PathSegment::Filter(Predicate {
+        let segments = vec![PathSegment::Filter(FilterExpr::Single(Predicate {
             field: "val".into(),
             op: CompareOp::Gt,
             value: FilterValue::Number(100.0),
-        })];
+        }))];
         let result = traverse(&data, &segments);
         assert_eq!(result.value, Some(json!([])));
     }
@@ -507,11 +520,11 @@ mod tests {
     #[test]
     fn test_traverse_filter_on_non_array() {
         let data = json!({"a": 1});
-        let segments = vec![PathSegment::Filter(Predicate {
+        let segments = vec![PathSegment::Filter(FilterExpr::Single(Predicate {
             field: "a".into(),
             op: CompareOp::Eq,
             value: FilterValue::Number(1.0),
-        })];
+        }))];
         let result = traverse(&data, &segments);
         assert_eq!(result.value, None);
     }

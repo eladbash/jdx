@@ -2,8 +2,8 @@ use anyhow::{bail, Result};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-use super::json::eval_predicate;
-use super::query::parse_predicate;
+use super::json::eval_filter_expr;
+use super::query::parse_filter_expr;
 
 /// Parse and execute one or more chained transform commands on a JSON value.
 ///
@@ -72,6 +72,11 @@ fn apply_single_transform(value: &Value, command: &str) -> Result<Value> {
         ":avg" => transform_avg(value, args),
         ":min" => transform_min(value, args),
         ":max" => transform_max(value, args),
+        ":reverse" => transform_reverse(value),
+        ":upper" => transform_upper(value),
+        ":lower" => transform_lower(value),
+        ":split" => transform_split(value, args),
+        ":join" => transform_join(value, args),
         _ => bail!("unknown transform command: {cmd}"),
     }
 }
@@ -285,26 +290,112 @@ fn transform_group_by(value: &Value, args: &str) -> Result<Value> {
     }
 }
 
-/// Filter array elements by a predicate.
-/// Usage: `:filter price < 10` or `:filter name == "Alice"`
+/// Filter array elements by a predicate expression (supports && and ||).
+/// Usage: `:filter price < 10`, `:filter price > 5 && price < 20`
 fn transform_filter(value: &Value, args: &str) -> Result<Value> {
     if args.is_empty() {
         bail!(":filter requires a predicate (e.g., :filter price < 10)");
     }
 
-    let pred =
-        parse_predicate(args).map_err(|e| anyhow::anyhow!(":filter invalid predicate: {e}"))?;
+    let expr =
+        parse_filter_expr(args).map_err(|e| anyhow::anyhow!(":filter invalid predicate: {e}"))?;
 
     match value {
         Value::Array(arr) => {
             let filtered: Vec<Value> = arr
                 .iter()
-                .filter(|item| eval_predicate(item, &pred))
+                .filter(|item| eval_filter_expr(item, &expr))
                 .cloned()
                 .collect();
             Ok(Value::Array(filtered))
         }
         _ => bail!(":filter requires an array"),
+    }
+}
+
+/// Reverse an array or a string.
+fn transform_reverse(value: &Value) -> Result<Value> {
+    match value {
+        Value::Array(arr) => {
+            let mut reversed = arr.clone();
+            reversed.reverse();
+            Ok(Value::Array(reversed))
+        }
+        Value::String(s) => Ok(Value::String(s.chars().rev().collect())),
+        _ => bail!(":reverse requires an array or string"),
+    }
+}
+
+/// Convert a string to uppercase, or all strings in an array.
+fn transform_upper(value: &Value) -> Result<Value> {
+    match value {
+        Value::String(s) => Ok(Value::String(s.to_uppercase())),
+        Value::Array(arr) => {
+            let result: Vec<Value> = arr
+                .iter()
+                .map(|item| match item {
+                    Value::String(s) => Value::String(s.to_uppercase()),
+                    other => other.clone(),
+                })
+                .collect();
+            Ok(Value::Array(result))
+        }
+        _ => bail!(":upper requires a string or array of strings"),
+    }
+}
+
+/// Convert a string to lowercase, or all strings in an array.
+fn transform_lower(value: &Value) -> Result<Value> {
+    match value {
+        Value::String(s) => Ok(Value::String(s.to_lowercase())),
+        Value::Array(arr) => {
+            let result: Vec<Value> = arr
+                .iter()
+                .map(|item| match item {
+                    Value::String(s) => Value::String(s.to_lowercase()),
+                    other => other.clone(),
+                })
+                .collect();
+            Ok(Value::Array(result))
+        }
+        _ => bail!(":lower requires a string or array of strings"),
+    }
+}
+
+/// Split a string by a delimiter into an array.
+/// Usage: `:split ,` or `:split -`
+fn transform_split(value: &Value, args: &str) -> Result<Value> {
+    if args.is_empty() {
+        bail!(":split requires a delimiter (e.g., :split ,)");
+    }
+    match value {
+        Value::String(s) => {
+            let parts: Vec<Value> = s
+                .split(args)
+                .map(|p| Value::String(p.to_string()))
+                .collect();
+            Ok(Value::Array(parts))
+        }
+        _ => bail!(":split requires a string"),
+    }
+}
+
+/// Join an array of strings with a separator.
+/// Usage: `:join ,` or `:join -`
+fn transform_join(value: &Value, args: &str) -> Result<Value> {
+    let sep = if args.is_empty() { "," } else { args };
+    match value {
+        Value::Array(arr) => {
+            let parts: Vec<String> = arr
+                .iter()
+                .map(|item| match item {
+                    Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                })
+                .collect();
+            Ok(Value::String(parts.join(sep)))
+        }
+        _ => bail!(":join requires an array"),
     }
 }
 

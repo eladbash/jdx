@@ -70,13 +70,24 @@ pub fn config_file_path() -> Option<PathBuf> {
 }
 
 /// Load configuration from disk, or return defaults.
-pub fn load_config() -> AppConfig {
+/// Returns `(config, Option<warning_message>)`. When TOML parsing fails,
+/// returns default config with a warning message instead of silently ignoring.
+pub fn load_config() -> (AppConfig, Option<String>) {
     match config_file_path() {
         Some(path) if path.exists() => match fs::read_to_string(&path) {
-            Ok(content) => toml::from_str(&content).unwrap_or_default(),
-            Err(_) => AppConfig::default(),
+            Ok(content) => match toml::from_str(&content) {
+                Ok(config) => (config, None),
+                Err(e) => (
+                    AppConfig::default(),
+                    Some(format!("Config parse error (using defaults): {e}")),
+                ),
+            },
+            Err(e) => (
+                AppConfig::default(),
+                Some(format!("Could not read config file: {e}")),
+            ),
         },
-        _ => AppConfig::default(),
+        _ => (AppConfig::default(), None),
     }
 }
 

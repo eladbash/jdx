@@ -74,7 +74,7 @@ pub fn run_wizard() -> Result<()> {
         .unwrap_or_else(|| "~/.config/jdx/config.toml".into());
     info(&format!("config     {cfg_path}"));
 
-    let mut config = config::load_config();
+    let (mut config, _) = config::load_config();
 
     // ── provider selection ─────────────────────────
     section("ai provider");

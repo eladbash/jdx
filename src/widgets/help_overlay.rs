@@ -17,7 +17,7 @@ impl Widget for HelpOverlayWidget {
     fn render(self, area: Rect, buf: &mut Buffer) {
         // Center the help popup
         let width = 60.min(area.width.saturating_sub(4));
-        let height = 24.min(area.height.saturating_sub(4));
+        let height = 28.min(area.height.saturating_sub(4));
         let x = area.x + (area.width.saturating_sub(width)) / 2;
         let y = area.y + (area.height.saturating_sub(height)) / 2;
         let popup = Rect::new(x, y, width, height);
@@ -77,6 +77,9 @@ fn get_bindings(mode: AppMode) -> Vec<(&'static str, &'static str)> {
                 ("Ctrl+S", "Toggle split view"),
                 ("S", "Schema view"),
                 ("/", "AI mode"),
+                ("", ""),
+                ("Filters", "[field > 5 && field < 20]"),
+                ("Transforms", ":sort :pick :filter :reverse ..."),
             ]);
         }
         AppMode::Tree => {

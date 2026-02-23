@@ -90,14 +90,14 @@
         <div class="feature-card fade-in">
           <div class="feature-icon cyan">.</div>
           <h3 class="font-semibold text-lg mb-2">Query Language</h3>
-          <p class="text-sm text-zinc-400 leading-relaxed">Dot-notation paths like <code class="text-cyan-400 text-xs" style="font-family:'JetBrains Mono',monospace">.users[0].name</code> with filter predicates. Every keystroke updates the view instantly.</p>
+          <p class="text-sm text-zinc-400 leading-relaxed">Dot-notation paths like <code class="text-cyan-400 text-xs" style="font-family:'JetBrains Mono',monospace">.users[0].name</code> with filter predicates and compound <code class="text-cyan-400 text-xs" style="font-family:'JetBrains Mono',monospace">&amp;&amp;</code> / <code class="text-cyan-400 text-xs" style="font-family:'JetBrains Mono',monospace">||</code> logic. Every keystroke updates the view instantly.</p>
         </div>
 
         <!-- Card 2 -->
         <div class="feature-card fade-in">
           <div class="feature-icon violet">:</div>
           <h3 class="font-semibold text-lg mb-2">Inline Transforms</h3>
-          <p class="text-sm text-zinc-400 leading-relaxed">Chain <code class="text-violet-400 text-xs" style="font-family:'JetBrains Mono',monospace">:pick</code>, <code class="text-violet-400 text-xs" style="font-family:'JetBrains Mono',monospace">:sort</code>, <code class="text-violet-400 text-xs" style="font-family:'JetBrains Mono',monospace">:filter</code>, <code class="text-violet-400 text-xs" style="font-family:'JetBrains Mono',monospace">:group_by</code>, and 10 more transforms directly in your query.</p>
+          <p class="text-sm text-zinc-400 leading-relaxed">Chain <code class="text-violet-400 text-xs" style="font-family:'JetBrains Mono',monospace">:pick</code>, <code class="text-violet-400 text-xs" style="font-family:'JetBrains Mono',monospace">:sort</code>, <code class="text-violet-400 text-xs" style="font-family:'JetBrains Mono',monospace">:filter</code>, <code class="text-violet-400 text-xs" style="font-family:'JetBrains Mono',monospace">:reverse</code>, <code class="text-violet-400 text-xs" style="font-family:'JetBrains Mono',monospace">:upper</code>, and 14 more transforms directly in your query.</p>
         </div>
 
         <!-- Card 3 -->
@@ -191,12 +191,17 @@
 <pre><span class="syn-cmt"># Dot-notation with filter predicates</span>
 <span class="syn-key">.store.books</span>[<span class="syn-key">price</span> <span class="syn-op">&lt;</span> <span class="syn-num">10</span>]<span class="syn-key">.title</span>
 
+<span class="syn-cmt"># Compound filters with &amp;&amp; and ||</span>
+<span class="syn-key">.items</span>[<span class="syn-key">price</span> <span class="syn-op">&gt;</span> <span class="syn-num">5</span> <span class="syn-op">&amp;&amp;</span> <span class="syn-key">price</span> <span class="syn-op">&lt;</span> <span class="syn-num">20</span>]
+<span class="syn-key">.users</span>[<span class="syn-key">role</span> <span class="syn-op">==</span> <span class="syn-str">"admin"</span> <span class="syn-op">||</span> <span class="syn-key">role</span> <span class="syn-op">==</span> <span class="syn-str">"mod"</span>]
+
 <span class="syn-cmt"># Chain transforms</span>
 <span class="syn-key">.users</span> <span class="syn-transform">:pick</span> name,age <span class="syn-transform">:filter</span> <span class="syn-key">age</span> <span class="syn-op">&gt;</span> <span class="syn-num">25</span> <span class="syn-transform">:sort</span> age desc
 
-<span class="syn-cmt"># Aggregations</span>
+<span class="syn-cmt"># Aggregations &amp; string transforms</span>
 <span class="syn-key">.store.books</span> <span class="syn-transform">:sum</span> price
-<span class="syn-key">.users</span>[<span class="syn-key">role</span> <span class="syn-op">==</span> <span class="syn-str">"admin"</span>] <span class="syn-transform">:count</span></pre>
+<span class="syn-key">.names</span> <span class="syn-transform">:upper</span> <span class="syn-transform">:reverse</span>
+<span class="syn-key">.date</span> <span class="syn-transform">:split</span> - <span class="syn-transform">:reverse</span> <span class="syn-transform">:join</span> /</pre>
           </div>
         </div>
 

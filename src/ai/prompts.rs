@@ -17,13 +17,16 @@ pub fn build_system_prompt(schema_summary: &str) -> String {
 
 Path navigation: .field, .field.sub, .arr[0], .arr[-1], .arr[0:3], .arr[*]
 Filter predicates: .arr[field == value], .arr[field < 10], .arr[field != "x"]
+Compound filters: .arr[price > 5 && price < 20], .arr[role == "admin" || role == "mod"]
 Transform commands:
   :keys, :values, :count, :flatten, :pick f1,f2, :omit f1, :sort field,
   :uniq, :group_by field, :filter field op value,
-  :sum field, :avg field, :min field, :max field
+  :sum field, :avg field, :min field, :max field,
+  :reverse, :upper, :lower, :split delimiter, :join separator
 
 Transforms chain: .books :filter price < 10 :pick title,price :sort price
 Operators: ==, !=, <, >, <=, >=
+Logical operators in filters: && (AND), || (OR)
 
 CRITICAL: NEVER use JSONPath syntax like [?(@.field > value)] or jq syntax like select(). Use jdx syntax only.
 

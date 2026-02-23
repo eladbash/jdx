@@ -344,3 +344,244 @@ fn test_filter_then_sum_on_fixture() {
     // 10.99 + 8.99 = 19.98
     assert_eq!(total.as_f64().unwrap(), 19.98);
 }
+
+// --- New Phase 3 transforms: :reverse, :upper, :lower, :split, :join ---
+
+#[test]
+fn test_reverse_array() {
+    let data = json!([1, 2, 3, 4, 5]);
+    let result = apply_transform(&data, ":reverse").unwrap();
+    assert_eq!(result, json!([5, 4, 3, 2, 1]));
+}
+
+#[test]
+fn test_reverse_string() {
+    let data = json!("hello");
+    let result = apply_transform(&data, ":reverse").unwrap();
+    assert_eq!(result, json!("olleh"));
+}
+
+#[test]
+fn test_reverse_empty_array() {
+    let data = json!([]);
+    let result = apply_transform(&data, ":reverse").unwrap();
+    assert_eq!(result, json!([]));
+}
+
+#[test]
+fn test_reverse_on_non_array_or_string() {
+    let data = json!(42);
+    assert!(apply_transform(&data, ":reverse").is_err());
+}
+
+#[test]
+fn test_upper_string() {
+    let data = json!("hello world");
+    let result = apply_transform(&data, ":upper").unwrap();
+    assert_eq!(result, json!("HELLO WORLD"));
+}
+
+#[test]
+fn test_upper_array_of_strings() {
+    let data = json!(["alice", "bob", "carol"]);
+    let result = apply_transform(&data, ":upper").unwrap();
+    assert_eq!(result, json!(["ALICE", "BOB", "CAROL"]));
+}
+
+#[test]
+fn test_upper_mixed_array() {
+    // Non-strings should pass through unchanged
+    let data = json!(["hello", 42, true]);
+    let result = apply_transform(&data, ":upper").unwrap();
+    assert_eq!(result, json!(["HELLO", 42, true]));
+}
+
+#[test]
+fn test_upper_on_number() {
+    let data = json!(42);
+    assert!(apply_transform(&data, ":upper").is_err());
+}
+
+#[test]
+fn test_lower_string() {
+    let data = json!("HELLO WORLD");
+    let result = apply_transform(&data, ":lower").unwrap();
+    assert_eq!(result, json!("hello world"));
+}
+
+#[test]
+fn test_lower_array_of_strings() {
+    let data = json!(["ALICE", "BOB"]);
+    let result = apply_transform(&data, ":lower").unwrap();
+    assert_eq!(result, json!(["alice", "bob"]));
+}
+
+#[test]
+fn test_split_string() {
+    let data = json!("a,b,c");
+    let result = apply_transform(&data, ":split ,").unwrap();
+    assert_eq!(result, json!(["a", "b", "c"]));
+}
+
+#[test]
+fn test_split_by_dash() {
+    let data = json!("2024-01-15");
+    let result = apply_transform(&data, ":split -").unwrap();
+    assert_eq!(result, json!(["2024", "01", "15"]));
+}
+
+#[test]
+fn test_split_no_delimiter() {
+    let data = json!("hello");
+    assert!(apply_transform(&data, ":split").is_err());
+}
+
+#[test]
+fn test_split_on_non_string() {
+    let data = json!(42);
+    assert!(apply_transform(&data, ":split ,").is_err());
+}
+
+#[test]
+fn test_join_array() {
+    let data = json!(["a", "b", "c"]);
+    let result = apply_transform(&data, ":join ,").unwrap();
+    assert_eq!(result, json!("a,b,c"));
+}
+
+#[test]
+fn test_join_with_dash() {
+    let data = json!(["hello", "world"]);
+    let result = apply_transform(&data, ":join -").unwrap();
+    assert_eq!(result, json!("hello-world"));
+}
+
+#[test]
+fn test_join_default_separator() {
+    let data = json!(["x", "y", "z"]);
+    let result = apply_transform(&data, ":join").unwrap();
+    assert_eq!(result, json!("x,y,z"));
+}
+
+#[test]
+fn test_join_mixed_types() {
+    let data = json!(["hello", 42, true]);
+    let result = apply_transform(&data, ":join -").unwrap();
+    assert_eq!(result, json!("hello-42-true"));
+}
+
+#[test]
+fn test_join_on_non_array() {
+    let data = json!("hello");
+    assert!(apply_transform(&data, ":join ,").is_err());
+}
+
+#[test]
+fn test_chain_split_then_reverse_then_join() {
+    let data = json!("a-b-c");
+    let result = apply_transform(&data, ":split - :reverse :join -").unwrap();
+    assert_eq!(result, json!("c-b-a"));
+}
+
+#[test]
+fn test_chain_upper_then_split() {
+    let data = json!("hello,world");
+    let result = apply_transform(&data, ":upper :split ,").unwrap();
+    assert_eq!(result, json!(["HELLO", "WORLD"]));
+}
+
+// --- Compound filter tests (AND/OR) ---
+
+#[test]
+fn test_compound_filter_and_inline() {
+    let data = json!({
+        "items": [
+            {"name": "A", "price": 5, "stock": 10},
+            {"name": "B", "price": 15, "stock": 20},
+            {"name": "C", "price": 8, "stock": 0},
+            {"name": "D", "price": 3, "stock": 5}
+        ]
+    });
+    let segments = parse(".items[price < 10 && stock > 0]").unwrap();
+    let result = traverse(&data, &segments);
+    let arr = result.value.unwrap();
+    let arr = arr.as_array().unwrap();
+    assert_eq!(arr.len(), 2);
+    assert_eq!(arr[0]["name"], "A");
+    assert_eq!(arr[1]["name"], "D");
+}
+
+#[test]
+fn test_compound_filter_or_inline() {
+    let data = json!({
+        "users": [
+            {"name": "Alice", "role": "admin"},
+            {"name": "Bob", "role": "user"},
+            {"name": "Carol", "role": "moderator"},
+            {"name": "Dave", "role": "user"}
+        ]
+    });
+    let segments = parse(".users[role == \"admin\" || role == \"moderator\"]").unwrap();
+    let result = traverse(&data, &segments);
+    let arr = result.value.unwrap();
+    let arr = arr.as_array().unwrap();
+    assert_eq!(arr.len(), 2);
+    assert_eq!(arr[0]["name"], "Alice");
+    assert_eq!(arr[1]["name"], "Carol");
+}
+
+#[test]
+fn test_compound_filter_and_with_transform() {
+    let data = json!([
+        {"name": "A", "price": 5, "category": "food"},
+        {"name": "B", "price": 15, "category": "food"},
+        {"name": "C", "price": 8, "category": "drink"},
+        {"name": "D", "price": 3, "category": "food"}
+    ]);
+    let result = apply_transform(
+        &data,
+        ":filter price < 10 && category == \"food\" :pick name,price",
+    )
+    .unwrap();
+    let arr = result.as_array().unwrap();
+    assert_eq!(arr.len(), 2);
+    assert_eq!(arr[0], json!({"name": "A", "price": 5}));
+    assert_eq!(arr[1], json!({"name": "D", "price": 3}));
+}
+
+#[test]
+fn test_compound_filter_or_with_transform() {
+    let data = json!([
+        {"name": "Alice", "age": 25},
+        {"name": "Bob", "age": 35},
+        {"name": "Carol", "age": 45},
+        {"name": "Dave", "age": 15}
+    ]);
+    let result = apply_transform(&data, ":filter age < 20 || age > 40 :pick name").unwrap();
+    let arr = result.as_array().unwrap();
+    assert_eq!(arr.len(), 2);
+    assert_eq!(arr[0], json!({"name": "Carol"}));
+    assert_eq!(arr[1], json!({"name": "Dave"}));
+}
+
+#[test]
+fn test_compound_filter_mixed_and_or() {
+    // OR has lower precedence than AND: a || b && c => a || (b && c)
+    let data = json!([
+        {"name": "A", "price": 100, "featured": true},
+        {"name": "B", "price": 5, "featured": false},
+        {"name": "C", "price": 8, "featured": false},
+        {"name": "D", "price": 3, "featured": true}
+    ]);
+    // featured == true || price < 10 && price > 4
+    // Matches: A (featured=true), B (price 5 in range), C (price 8 in range), D (featured=true)
+    let segments = parse(".[featured == true || price < 10 && price > 4]").unwrap();
+    let result = traverse(&data, &segments);
+    let arr = result.value.unwrap();
+    let arr = arr.as_array().unwrap();
+    assert_eq!(arr.len(), 4);
+    assert_eq!(arr[0]["name"], "A");
+    assert_eq!(arr[1]["name"], "B");
+    assert_eq!(arr[2]["name"], "C");
+    assert_eq!(arr[3]["name"], "D");
+}

@@ -31,6 +31,17 @@ pub struct Predicate {
     pub value: FilterValue,
 }
 
+/// A compound filter expression supporting AND/OR logic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FilterExpr {
+    /// A single predicate: `price < 10`
+    Single(Predicate),
+    /// Logical AND: `price > 5 && price < 20`
+    And(Box<FilterExpr>, Box<FilterExpr>),
+    /// Logical OR: `role == "admin" || role == "mod"`
+    Or(Box<FilterExpr>, Box<FilterExpr>),
+}
+
 /// A single segment of a JSON path query.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PathSegment {
@@ -42,8 +53,8 @@ pub enum PathSegment {
     Slice(Option<i64>, Option<i64>),
     /// Wildcard: `[*]` or `.*`
     Wildcard,
-    /// Filter predicate on array: `[price < 10]`
-    Filter(Predicate),
+    /// Filter expression on array: `[price < 10]`, `[price > 5 && price < 20]`
+    Filter(FilterExpr),
 }
 
 /// Error from parsing a query string.
@@ -63,6 +74,60 @@ pub enum QueryError {
     InvalidPredicate { expr: String, pos: usize },
     #[error("empty query")]
     Empty,
+}
+
+/// Parse a compound filter expression with `&&` and `||` operators.
+/// `||` has lower precedence than `&&`.
+pub fn parse_filter_expr(expr: &str) -> Result<FilterExpr, String> {
+    let expr = expr.trim();
+
+    // Split on `||` (lowest precedence) — but not inside quoted strings
+    if let Some(parts) = split_outside_quotes(expr, "||") {
+        let left = parse_filter_expr(parts.0)?;
+        let right = parse_filter_expr(parts.1)?;
+        return Ok(FilterExpr::Or(Box::new(left), Box::new(right)));
+    }
+
+    // Split on `&&` (higher precedence)
+    if let Some(parts) = split_outside_quotes(expr, "&&") {
+        let left = parse_filter_expr(parts.0)?;
+        let right = parse_filter_expr(parts.1)?;
+        return Ok(FilterExpr::And(Box::new(left), Box::new(right)));
+    }
+
+    // Base case: a single predicate
+    let pred = parse_predicate(expr)?;
+    Ok(FilterExpr::Single(pred))
+}
+
+/// Split a string on a delimiter, but only if the delimiter is not inside quotes.
+/// Returns the first split point found (leftmost), or None if not found.
+fn split_outside_quotes<'a>(s: &'a str, delim: &str) -> Option<(&'a str, &'a str)> {
+    let bytes = s.as_bytes();
+    let delim_bytes = delim.as_bytes();
+    let dlen = delim_bytes.len();
+    let mut in_quote = false;
+    let mut quote_char = b'"';
+    let mut i = 0;
+    while i + dlen <= bytes.len() {
+        let b = bytes[i];
+        if !in_quote && (b == b'"' || b == b'\'') {
+            in_quote = true;
+            quote_char = b;
+            i += 1;
+            continue;
+        }
+        if in_quote && b == quote_char {
+            in_quote = false;
+            i += 1;
+            continue;
+        }
+        if !in_quote && &bytes[i..i + dlen] == delim_bytes {
+            return Some((&s[..i], &s[i + dlen..]));
+        }
+        i += 1;
+    }
+    None
 }
 
 /// Parse a predicate expression like `price < 10` or `name == "Alice"`.
@@ -337,9 +402,9 @@ fn parse_bracket(
             let content: String = chars[content_start..i].iter().collect();
             i += 1; // skip `]`
 
-            match parse_predicate(&content) {
-                Ok(pred) => {
-                    segments.push(PathSegment::Filter(pred));
+            match parse_filter_expr(&content) {
+                Ok(expr) => {
+                    segments.push(PathSegment::Filter(expr));
                 }
                 Err(_) => {
                     return Err(QueryError::InvalidPredicate {
@@ -550,11 +615,11 @@ mod tests {
             result,
             vec![
                 PathSegment::Key("books".into()),
-                PathSegment::Filter(Predicate {
+                PathSegment::Filter(FilterExpr::Single(Predicate {
                     field: "price".into(),
                     op: CompareOp::Lt,
                     value: FilterValue::Number(10.0),
-                }),
+                })),
             ]
         );
     }
@@ -566,11 +631,11 @@ mod tests {
             result,
             vec![
                 PathSegment::Key("users".into()),
-                PathSegment::Filter(Predicate {
+                PathSegment::Filter(FilterExpr::Single(Predicate {
                     field: "role".into(),
                     op: CompareOp::Eq,
                     value: FilterValue::String("admin".into()),
-                }),
+                })),
             ]
         );
     }
@@ -582,11 +647,11 @@ mod tests {
             result,
             vec![
                 PathSegment::Key("items".into()),
-                PathSegment::Filter(Predicate {
+                PathSegment::Filter(FilterExpr::Single(Predicate {
                     field: "score".into(),
                     op: CompareOp::Ge,
                     value: FilterValue::Number(90.0),
-                }),
+                })),
             ]
         );
     }
@@ -598,11 +663,11 @@ mod tests {
             result,
             vec![
                 PathSegment::Key("items".into()),
-                PathSegment::Filter(Predicate {
+                PathSegment::Filter(FilterExpr::Single(Predicate {
                     field: "status".into(),
                     op: CompareOp::Ne,
                     value: FilterValue::String("deleted".into()),
-                }),
+                })),
             ]
         );
     }
@@ -614,11 +679,11 @@ mod tests {
             result,
             vec![
                 PathSegment::Key("users".into()),
-                PathSegment::Filter(Predicate {
+                PathSegment::Filter(FilterExpr::Single(Predicate {
                     field: "active".into(),
                     op: CompareOp::Eq,
                     value: FilterValue::Bool(true),
-                }),
+                })),
             ]
         );
     }
@@ -630,11 +695,11 @@ mod tests {
             result,
             vec![
                 PathSegment::Key("items".into()),
-                PathSegment::Filter(Predicate {
+                PathSegment::Filter(FilterExpr::Single(Predicate {
                     field: "deleted".into(),
                     op: CompareOp::Eq,
                     value: FilterValue::Null,
-                }),
+                })),
             ]
         );
     }
@@ -647,11 +712,11 @@ mod tests {
             vec![
                 PathSegment::Key("store".into()),
                 PathSegment::Key("books".into()),
-                PathSegment::Filter(Predicate {
+                PathSegment::Filter(FilterExpr::Single(Predicate {
                     field: "price".into(),
                     op: CompareOp::Lt,
                     value: FilterValue::Number(10.0),
-                }),
+                })),
                 PathSegment::Key("title".into()),
             ]
         );
